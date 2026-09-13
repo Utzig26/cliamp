@@ -118,7 +118,9 @@ func run(overrides config.Overrides, positional []string, daemon, visualizer60FP
 	}
 
 	// Public providers are always available; account providers register when configured.
+	radioFavorites := radio.LoadFavorites()
 	radioProv := radio.New(radio.Options{
+		Favorites:   radioFavorites,
 		Country:     cfg.Radio.Country,
 		SaveCountry: config.SaveRadioCountry,
 	})
@@ -473,6 +475,7 @@ func run(overrides config.Overrides, positional []string, daemon, visualizer60FP
 	}
 
 	m := model.New(p, pl, providers, defaultProvider, localProv, themes, luaMgr, config.SaveFunc{})
+	m.SetRadioFavorites(radioFavorites)
 	if defaultProvider == "jellyfin" && jellyProv != nil {
 		m.SetResumeSaver(func(track playlist.Track, positionSec int, context []playlist.Track, contextIndex int) {
 			if _, ok := jellyProv.RestoreTrack(track); !ok {

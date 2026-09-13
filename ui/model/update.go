@@ -13,7 +13,6 @@ import (
 	"github.com/bjarneo/cliamp/ipc"
 	"github.com/bjarneo/cliamp/player"
 	"github.com/bjarneo/cliamp/playlist"
-	"github.com/bjarneo/cliamp/provider"
 	"github.com/bjarneo/cliamp/theme"
 	"github.com/bjarneo/cliamp/ui"
 )
@@ -96,7 +95,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// A newer target arrived while this seek was running; land on it
 			// rather than reporting this now-stale position as final.
-			return m, m.commitPendingSeek()
+			cmd := m.commitPendingSeek()
+			return m, cmd
 		}
 		m.seek.pending = false
 		// Only clear seekActive if no new seek keypresses arrived during loading.
@@ -119,13 +119,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.status.Warningf(statusTTLMedium, "Seek failed; playback continues from the previous position: %s", msg.err)
 			}
 			m.notifyAll()
-			return m, m.preloadNext()
+			cmd := m.preloadNext()
+			return m, cmd
 		}
 		if msg.resume {
 			m.status.Showf(statusTTLDefault, "Resumed at %s", formatJumpClock(msg.target))
 		}
 		m.finishSeek()
-		return m, m.preloadNext()
+		cmd := m.preloadNext()
+		return m, cmd
 
 	case ytdlUnpauseReconnectMsg:
 		m.seek.active = false
@@ -380,7 +382,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.openDefaultProviderOnce = false
-		return m, m.openDefaultProviderBrowser()
+		cmd := m.openDefaultProviderBrowser()
+		return m, cmd
+
+	case radioListsRefreshMsg:
+		if msg.gen != m.requests.provider || !m.isActiveProvider("Radio") {
+			return m, nil
+		}
+		cmd := m.refreshRadioLists()
+		return m, cmd
 
 	case playlistsLoadedMsg:
 		if msg.gen != m.requests.provider || !m.isActiveProvider(msg.providerName) {
@@ -400,17 +410,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = nil
 			m.status.Warningf(statusTTLLong, "%s", msg.err)
 		}
-		m.providerLists = providerListsWithBrowse(m.provider, msg.playlists)
-		m.provCursor = min(m.provCursor, max(0, len(m.providerLists)-1))
-		// Start loading catalog when the provider supports lazy catalog loading.
-		if cs, ok := m.provider.(provider.CatalogSearcher); ok && cs.IsSearching() {
-			return m, nil
-		}
-		if loader, ok := m.provider.(provider.CatalogLoader); ok && !m.catalogBatch.loading && !m.catalogBatch.done && !m.provSearch.active && !m.provSearch.loading {
-			m.catalogBatch.loading = true
-			return m, m.fetchCatalogBatch(loader)
-		}
-		return m, nil
+		m.replaceProviderLists(msg.playlists)
+		cmd := m.startCatalogLoading()
+		return m, cmd
 
 	case tracksLoadedMsg:
 		if msg.gen != m.requests.tracks || !m.isActiveProvider(msg.providerName) {
@@ -541,8 +543,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.catalogBatch.done = true
 			return m, nil
 		}
-		if lists, err := m.provider.Playlists(); err == nil {
-			m.providerLists = providerListsWithBrowse(m.provider, lists)
+		if err := m.refreshProviderListsNow(); err != nil {
+			m.err = err
 		}
 		m.catalogBatch.offset += msg.added
 		if msg.added < catalogBatchSize {
@@ -559,8 +561,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.status.Errorf(statusTTLDefault, "Search failed: %s", msg.err)
 		} else {
-			if lists, err := m.provider.Playlists(); err == nil {
-				m.providerLists = providerListsWithBrowse(m.provider, lists)
+			if err := m.refreshProviderListsNow(); err != nil {
+				m.err = err
 			}
 			m.provCursor = 0
 			m.provScroll = 0
@@ -696,7 +698,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refreshPlaylistManagerAfterWrite(msg.targetPlaylist)
 			// Track/dir counts in the provider pane come from Playlists();
 			// re-pull now that the file write has landed.
-			return m, m.refreshPaneAfterLocalWrite()
+			cmd := m.refreshPaneAfterLocalWrite()
+			return m, cmd
 		}
 		if msg.toPlaylist {
 			m.openPlaylistPicker(msg.tracks, fmt.Sprintf("%d tracks selected", len(msg.tracks)))
@@ -836,11 +839,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.closeSpotSearch()
 		switch msg.action {
 		case spotAlbumAppend:
-			return m, m.appendAlbum(album, tracks)
+			cmd := m.appendAlbum(album, tracks)
+			return m, cmd
 		case spotAlbumQueueNext:
-			return m, m.queueAlbumNext(album, tracks)
+			cmd := m.queueAlbumNext(album, tracks)
+			return m, cmd
 		default:
-			return m, m.playAlbumImmediate(album, tracks)
+			cmd := m.playAlbumImmediate(album, tracks)
+			return m, cmd
 		}
 
 	case spotPlaylistsMsg:
@@ -902,7 +908,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.provSignIn = false
 		m.provLoading = true
-		return m, m.fetchProviderPlaylists()
+		cmd := m.fetchProviderPlaylists()
+		return m, cmd
 
 	case ProvAuthURLMsg:
 		if !m.provLoading || !m.isActiveProvider(msg.ProviderName) {
@@ -974,7 +981,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case playback.SetPositionMsg:
-		return m, m.seekAbsolute(msg.Position)
+		cmd := m.seekAbsolute(msg.Position)
+		return m, cmd
 
 	case playback.SetVolumeMsg:
 		m.player.SetVolume(msg.VolumeDB)
@@ -1004,7 +1012,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case PluginQueueMsg:
-		return m, m.handlePluginQueue(msg)
+		cmd := m.handlePluginQueue(msg)
+		return m, cmd
 
 	case pluginQueueAddedMsg:
 		if len(msg.tracks) > 0 {
@@ -1226,34 +1235,44 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case ipc.QueueRequestMsg:
-		return m, m.handleIPCQueue(msg)
+		cmd := m.handleIPCQueue(msg)
+		return m, cmd
 
 	case ipc.LibraryRequestMsg:
-		return m, m.handleIPCLibrary(msg)
+		cmd := m.handleIPCLibrary(msg)
+		return m, cmd
 
 	case ipcProviderLoadResult:
-		return m, m.handleIPCProviderLoad(msg)
+		cmd := m.handleIPCProviderLoad(msg)
+		return m, cmd
 
 	case ipcFeedLoadResult:
-		return m, m.handleIPCFeedLoad(msg)
+		cmd := m.handleIPCFeedLoad(msg)
+		return m, cmd
 
 	case ipc.LyricsRequestMsg:
-		return m, m.handleIPCLyrics(msg)
+		cmd := m.handleIPCLyrics(msg)
+		return m, cmd
 
 	case ipc.HistoryRequestMsg:
-		return m, m.handleIPCHistory(msg)
+		cmd := m.handleIPCHistory(msg)
+		return m, cmd
 
 	case ipc.URLRequestMsg:
-		return m, m.handleIPCURL(msg)
+		cmd := m.handleIPCURL(msg)
+		return m, cmd
 
 	case ipcURLLoadResult:
-		return m, m.handleIPCURLResult(msg)
+		cmd := m.handleIPCURLResult(msg)
+		return m, cmd
 
 	case ipc.SaveRequestMsg:
-		return m, m.handleIPCSave(msg)
+		cmd := m.handleIPCSave(msg)
+		return m, cmd
 
 	case V2RequestMsg:
-		return m, m.handleV2Request(msg)
+		cmd := m.handleV2Request(msg)
+		return m, cmd
 
 	case ipcV2ResponseMsg:
 		if msg.Response.OK {

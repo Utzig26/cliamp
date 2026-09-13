@@ -1080,7 +1080,7 @@ func (m Model) renderPlaylist() string {
 		}
 		if cols.bookmark {
 			mark := " "
-			if t.Bookmark {
+			if m.playlistTrackStarred(t) {
 				mark = "★"
 			}
 			markers += mark

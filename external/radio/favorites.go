@@ -6,8 +6,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/bjarneo/cliamp/internal/appdir"
 	"github.com/bjarneo/cliamp/internal/fileutil"
@@ -18,6 +20,8 @@ const favoritesFile = "radio_favorites.toml"
 
 // Favorites manages a persistent set of favorite radio stations.
 type Favorites struct {
+	mu       sync.RWMutex
+	revision uint64
 	stations []CatalogStation
 	byURL    map[string]struct{}
 	path     string
@@ -44,41 +48,89 @@ func LoadFavorites() *Favorites {
 
 // Stations returns all favorite stations.
 func (f *Favorites) Stations() []CatalogStation {
-	return f.stations
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return slices.Clone(f.stations)
 }
 
 // Contains returns true if the station URL is in favorites.
 func (f *Favorites) Contains(url string) bool {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	_, ok := f.byURL[url]
 	return ok
 }
 
+// Count returns the number of saved stations.
+func (f *Favorites) Count() int {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return len(f.stations)
+}
+
+// Revision changes only after a successful mutation has been persisted.
+func (f *Favorites) Revision() uint64 {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.revision
+}
+
+// Toggle adds or removes a station by URL. Failed writes leave memory unchanged.
+func (f *Favorites) Toggle(s CatalogStation) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_, exists := f.byURL[s.URL]
+	if err := f.setLocked(s, !exists); err != nil {
+		return false, err
+	}
+	return !exists, nil
+}
+
 // Add adds a station to favorites and saves to disk.
 func (f *Favorites) Add(s CatalogStation) error {
-	if f.Contains(s.URL) {
-		return nil
-	}
-	f.stations = append(f.stations, s)
-	f.byURL[s.URL] = struct{}{}
-	return f.save()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.setLocked(s, true)
 }
 
 // Remove removes a station by URL from favorites and saves to disk.
 func (f *Favorites) Remove(url string) error {
-	if !f.Contains(url) {
-		return nil
-	}
-	for i, s := range f.stations {
-		if s.URL == url {
-			f.stations = append(f.stations[:i], f.stations[i+1:]...)
-			break
-		}
-	}
-	delete(f.byURL, url)
-	return f.save()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.setLocked(CatalogStation{URL: url}, false)
 }
 
-func (f *Favorites) save() error {
+// setLocked persists a candidate snapshot before publishing it to readers.
+func (f *Favorites) setLocked(s CatalogStation, favorite bool) error {
+	_, exists := f.byURL[s.URL]
+	if exists == favorite {
+		return nil
+	}
+	stations := slices.Clone(f.stations)
+	if favorite {
+		stations = append(stations, s)
+	} else {
+		stations = slices.DeleteFunc(stations, func(station CatalogStation) bool {
+			return station.URL == s.URL
+		})
+	}
+	if err := f.save(stations); err != nil {
+		return fmt.Errorf("save radio favorites: %w", err)
+	}
+	f.stations = stations
+	f.revision++
+	if favorite {
+		if f.byURL == nil {
+			f.byURL = make(map[string]struct{})
+		}
+		f.byURL[s.URL] = struct{}{}
+	} else {
+		delete(f.byURL, s.URL)
+	}
+	return nil
+}
+
+func (f *Favorites) save(stations []CatalogStation) error {
 	if f.path == "" {
 		dir, err := appdir.Dir()
 		if err != nil {
@@ -94,7 +146,7 @@ func (f *Favorites) save() error {
 	// hand it to WriteFileAtomic so a partial or failed write can never
 	// truncate or corrupt the existing favorites file.
 	var b strings.Builder
-	for i, s := range f.stations {
+	for i, s := range stations {
 		if i > 0 {
 			fmt.Fprintln(&b)
 		}
@@ -103,6 +155,9 @@ func (f *Favorites) save() error {
 		fmt.Fprintf(&b, "url = %q\n", s.URL)
 		if s.Country != "" {
 			fmt.Fprintf(&b, "country = %q\n", s.Country)
+		}
+		if s.State != "" {
+			fmt.Fprintf(&b, "state = %q\n", s.State)
 		}
 		if s.Bitrate > 0 {
 			fmt.Fprintf(&b, "bitrate = %d\n", s.Bitrate)
@@ -137,6 +192,7 @@ func loadFavoriteStations(path string) ([]CatalogStation, error) {
 			Name:     f["name"],
 			URL:      f["url"],
 			Country:  f["country"],
+			State:    f["state"],
 			Codec:    f["codec"],
 			Tags:     f["tags"],
 			Homepage: f["homepage"],

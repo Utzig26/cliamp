@@ -9,6 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/bjarneo/cliamp/external/radio"
 	"github.com/bjarneo/cliamp/playlist"
 	"github.com/bjarneo/cliamp/provider"
 	"github.com/bjarneo/cliamp/ui"
@@ -167,11 +168,53 @@ type markerColumns struct {
 // title column as you scrolled. With no queue, bookmarks, or favorites the
 // titles start four columns further left.
 func (m Model) markerColumns() markerColumns {
-	return markerColumns{
+	cols := markerColumns{
 		queue:    m.playlist.QueueLen() > 0,
 		bookmark: m.playlist.BookmarkCount() > 0,
 		favorite: len(m.favSet) > 0,
 	}
+	if m.radioFavorites != nil {
+		cols.bookmark = m.radioMarkers.starred(m)
+	}
+	return cols
+}
+
+// radioMarkerCache memoizes a whole-playlist question without copying tracks
+// every frame. Input revisions also cover mutations made outside key handlers.
+type radioMarkerCache struct {
+	key     radioMarkerKey
+	hasStar bool
+}
+
+type radioMarkerKey struct {
+	playlist          *playlist.Playlist
+	playlistRevision  uint64
+	favorites         *radio.Favorites
+	favoritesRevision uint64
+	savedPlaylist     bool
+}
+
+func (c *radioMarkerCache) starred(m Model) bool {
+	key := radioMarkerKey{
+		playlist: m.playlist, playlistRevision: m.playlist.Revision(),
+		favorites: m.radioFavorites, favoritesRevision: m.radioFavorites.Revision(),
+		savedPlaylist: m.loadedPlaylist != "",
+	}
+	if c.key == key {
+		return c.hasStar
+	}
+	hasStar := m.playlist.BookmarkCount() > 0
+	if !hasStar && !key.savedPlaylist && m.radioFavorites.Count() > 0 {
+		for i := range m.playlist.Len() {
+			track, ok := m.playlist.Track(i)
+			if ok && m.playlistTrackStarred(track) {
+				hasStar = true
+				break
+			}
+		}
+	}
+	c.key, c.hasStar = key, hasStar
+	return hasStar
 }
 
 // cursorLine renders a list item with "> " prefix when active, "  " otherwise.

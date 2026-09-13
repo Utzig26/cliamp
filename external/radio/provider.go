@@ -59,6 +59,9 @@ const (
 
 // Options configures the provider at construction time.
 type Options struct {
+	// Favorites shares the local radio favorites store with the playback UI.
+	// When nil, the provider loads its own store.
+	Favorites *Favorites
 	// Country records what the listener has already said about their location:
 	// an ISO 3166-1 alpha-2 code to use, CountryDeclined to leave it alone, or
 	// empty for "not asked yet". Nothing is detected until this is a code, so
@@ -109,6 +112,10 @@ func New(opts Options) *Provider {
 		},
 	}
 
+	p.favorites = opts.Favorites
+	if p.favorites == nil {
+		p.favorites = LoadFavorites()
+	}
 	p.saveCountry = opts.SaveCountry
 
 	answer := strings.TrimSpace(opts.Country)
@@ -121,14 +128,12 @@ func New(opts Options) *Provider {
 
 	dir, err := appdir.Dir()
 	if err != nil {
-		p.favorites = &Favorites{byURL: make(map[string]struct{})}
 		p.pins = &Pins{}
 		return p
 	}
 	if extra, err := loadStations(filepath.Join(dir, "radios.toml")); err == nil {
 		p.stations = append(p.stations, extra...)
 	}
-	p.favorites = LoadFavorites()
 	p.pins = LoadPins()
 	return p
 }
@@ -193,10 +198,11 @@ func (p *Provider) Playlists() ([]playlist.PlaylistInfo, error) {
 		})
 	}
 
-	// Favorites.
-	for i, s := range p.favorites.Stations() {
+	// Favorite IDs use URLs so removing a row cannot change another station's
+	// identity (including selections and in-flight track requests).
+	for _, s := range p.favorites.Stations() {
 		out = append(out, playlist.PlaylistInfo{
-			ID:   fmt.Sprintf("f:%d", i),
+			ID:   "f:" + s.URL,
 			Name: "★ " + formatCatalogName(s),
 		})
 	}
@@ -231,6 +237,14 @@ func (p *Provider) Tracks(id string) ([]playlist.Track, error) {
 		return nil, errors.New("radio: the location row is a prompt, not a playlist")
 	}
 
+	if strings.HasPrefix(id, "f:") {
+		station, err := p.favoriteStation(id)
+		if err != nil {
+			return nil, err
+		}
+		return []playlist.Track{stationTrack(station)}, nil
+	}
+
 	prefix, idx, err := parseStationID(id)
 	if err != nil {
 		return nil, err
@@ -259,12 +273,6 @@ func (p *Provider) Tracks(id string) ([]playlist.Track, error) {
 		return []playlist.Track{{
 			Path: p.stations[idx].url, Title: p.stations[idx].name, Stream: true, Realtime: true,
 		}}, nil
-	case "f":
-		favs := p.favorites.Stations()
-		if idx < 0 || idx >= len(favs) {
-			return nil, errors.New("invalid favorite index")
-		}
-		s = favs[idx]
 	case "c":
 		if idx < 0 || idx >= len(p.catalog) {
 			return nil, errors.New("invalid catalog station index")
@@ -287,7 +295,10 @@ func stationTrack(s CatalogStation) playlist.Track {
 	track := playlist.Track{
 		Path: s.URL, Title: s.Name, Genre: s.Tags, Stream: true, Realtime: true,
 	}
-	meta := make(map[string]string, 4)
+	meta := map[string]string{
+		"radio.name": s.Name,
+		"radio.url":  s.URL,
+	}
 	if s.Country != "" {
 		meta["radio.country"] = s.Country
 	}
@@ -300,10 +311,33 @@ func stationTrack(s CatalogStation) playlist.Track {
 	if s.State != "" {
 		meta["radio.state"] = s.State
 	}
-	if len(meta) > 0 {
-		track.ProviderMeta = meta
+	if s.Homepage != "" {
+		meta["radio.homepage"] = s.Homepage
 	}
+	track.ProviderMeta = meta
 	return track
+}
+
+// StationFromTrack recovers directory station identity, not its decorated title
+// or the current ICY song. A wrapper station keeps its original URL even when
+// playback resolves to a different stream. Both URLs must remain HTTP(S).
+func StationFromTrack(track playlist.Track) (CatalogStation, bool) {
+	name, path := track.Meta("radio.name"), track.Meta("radio.url")
+	if !track.Stream || !track.Realtime || name == "" {
+		return CatalogStation{}, false
+	}
+	for _, rawURL := range []string{path, track.Path} {
+		u, err := url.Parse(rawURL)
+		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+			return CatalogStation{}, false
+		}
+	}
+	bitrate, _ := strconv.Atoi(track.Meta("radio.bitrate"))
+	return CatalogStation{
+		Name: name, URL: path, Tags: track.Genre,
+		Country: track.Meta("radio.country"), Codec: track.Meta("radio.codec"),
+		Bitrate: bitrate, State: track.Meta("radio.state"), Homepage: track.Meta("radio.homepage"),
+	}, true
 }
 
 // placeAt returns the place at index idx of the pane's Countries section.
@@ -341,6 +375,15 @@ func (p *Provider) ToggleFavorite(id string) (added bool, name string, err error
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	if strings.HasPrefix(id, "f:") {
+		station, err := p.favoriteStation(id)
+		if err != nil {
+			return false, "", err
+		}
+		added, err := p.favorites.Toggle(station)
+		return added, station.Name, err
+	}
+
 	prefix, idx, err := parseStationID(id)
 	if err != nil {
 		return false, "", err
@@ -358,20 +401,24 @@ func (p *Provider) ToggleFavorite(id string) (added bool, name string, err error
 			return false, "", errors.New("invalid search result index")
 		}
 		s = p.searchResults[idx]
-	case "f":
-		favs := p.favorites.Stations()
-		if idx < 0 || idx >= len(favs) {
-			return false, "", errors.New("invalid favorite index")
-		}
-		s = favs[idx]
 	default:
 		return false, "", errors.New("cannot favorite local stations")
 	}
 
-	if p.favorites.Contains(s.URL) {
-		return false, s.Name, p.favorites.Remove(s.URL)
+	added, err = p.favorites.Toggle(s)
+	return added, s.Name, err
+}
+
+// favoriteStation resolves a stable favorite ID from a snapshot of the store.
+func (p *Provider) favoriteStation(id string) (CatalogStation, error) {
+	key := strings.TrimPrefix(id, "f:")
+	stations := p.favorites.Stations()
+	for _, station := range stations {
+		if station.URL == key {
+			return station, nil
+		}
 	}
-	return true, s.Name, p.favorites.Add(s)
+	return CatalogStation{}, errors.New("unknown favorite station")
 }
 
 // SetSearchResults activates search mode with the given results.

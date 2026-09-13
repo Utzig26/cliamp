@@ -427,6 +427,7 @@ footer a{color:var(--fg-2)}
       <div class="filters" id="filters" role="group" aria-label="Filter sources"></div>
     </div>
     <div class="grid g-sources" id="sources-grid"></div>
+    <p class="sub">Radio favorites follow the station: press <kbd>f</kbd> in Catalog, search results, or the playback playlist after browsing countries or genres. Stations are saved locally under Radio → Favorites by URL, using the station name rather than the current song and retaining station details, including the region, after restart. Radio favorites do not reserve a star column in playlists containing no favorited stations. M3U/PLS wrappers keep their original station URL after playback resolution. Toggling a favorite preserves the selected station and completed catalog pages, including during loading. Favoriting does not fetch more catalog stations or interrupt an in-progress station load. IPC clients use the stable URL-based favorite IDs returned by provider.playlists; positional favorite IDs are not supported. Press <kbd>f</kbd> again to remove one. In saved local playlists, <kbd>f</kbd> still bookmarks the track; <kbd>n</kbd> remains the separate heart favorite, available when the playback playlist has focus. Remote account favorites are unchanged. <a href="https://github.com/bjarneo/cliamp/blob/main/docs/radio.md#station-favorites">Radio favorites guide</a>.</p>
     <p class="sub">Navidrome uses the player's transcoding settings, or streams the original file if none are configured. Set <code>format = "raw"</code> under <code>[navidrome]</code> to always request the original. <a href="https://github.com/bjarneo/cliamp/blob/main/docs/navidrome.md#transcoding">Navidrome guide</a>.</p>
     <p class="sub">With Jellyfin as the default provider, reopen cliamp without files, URLs, or a playlist to restore the last track, position, and complete source list. Queued tracks keep their own album context. Press <kbd>Enter</kbd> to resume; restored sessions stay silent even with <code>auto_play</code>. Playback is checkpointed every two seconds and on normal exit, without saving unfinished seeks. Stream URLs use current API-key or password authentication when playback starts. <a href="https://github.com/bjarneo/cliamp/blob/main/docs/jellyfin.md">Jellyfin guide</a>.</p>
   </section>
@@ -445,7 +446,7 @@ footer a{color:var(--fg-2)}
       </div>
       <div class="feat">
         <div class="feat-k">SYNCED LYRICS</div>
-        <p>Embedded LRC first, then LRCLIB and NetEase. Time-aligned lines scroll with playback, and live radio refreshes on every ICY track change. Press <kbd>y</kbd>.</p>
+        <p>Embedded LRC first, then LRCLIB and NetEase. Time-aligned lines scroll with song playback. Live radio refreshes on every ICY track change and uses manual scrolling, even with timestamped lyrics. Press <kbd>y</kbd>.</p>
       </div>
       <div class="feat">
         <div class="feat-k">PLAYLISTS &amp; QUEUE</div>

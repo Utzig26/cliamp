@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bjarneo/cliamp/external/radio"
 	"github.com/bjarneo/cliamp/history"
 	"github.com/bjarneo/cliamp/internal/playback"
 	"github.com/bjarneo/cliamp/luaplugin"
@@ -440,6 +441,11 @@ type Model struct {
 	// Favorites manager (nil when local provider doesn't support it; safe to
 	// call when nil). Cached here to avoid a type assertion per rendered track.
 	favMgr provider.FavoritesManager
+
+	// Local station favorites, independent of bookmarks and heart favorites.
+	radioFavorites *radio.Favorites
+	// Shared across Model value copies; keyed by input revisions, not handlers.
+	radioMarkers *radioMarkerCache
 
 	// favSet is a cached set of favorited paths for O(1) lookup during
 	// rendering. Refreshed on init and after every toggle.

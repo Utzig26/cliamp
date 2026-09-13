@@ -441,6 +441,9 @@ func (m *Model) playTrack(track playlist.Track) tea.Cmd {
 		return resolveFeedTrackCmd(track.Path)
 	}
 	track, fetchCmd := m.beginPlaybackTrack(track)
+	// Emit track.change to plugins and report now-playing to the owning
+	// provider for every source, including yt-dlp streams below.
+	m.nowPlaying(track)
 
 	// Stream yt-dlp URLs (YouTube, SoundCloud, Bandcamp, etc.) via pipe chain.
 	if playlist.IsYTDL(track.Path) {
@@ -453,8 +456,6 @@ func (m *Model) playTrack(track playlist.Track) tea.Cmd {
 		}
 		return playYTDLStreamCmd(m.player, track.Path, dur, m.requests.stream)
 	}
-	// Fire now-playing notification for Navidrome tracks.
-	m.nowPlaying(track)
 	dur := time.Duration(track.DurationSecs) * time.Second
 	if track.Stream {
 		m.buffering = true

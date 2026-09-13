@@ -14,6 +14,9 @@ cliamp local.mp3 https://example.com/remote.mp3   # mix local + remote
 
 For a non-seekable HTTP stream, the UI shows `● Streaming` and a static seek bar. Seek keys have no effect.
 
+If a new stream fails to start, any track already playing keeps playing and
+remains the reported current track, including after rapid skips or retries.
+
 ## PLS Playlists
 
 cliamp supports PLS playlist files and M3U files:

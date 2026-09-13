@@ -527,10 +527,16 @@ func (m *Model) backfillLoadedPlaylistDuration(track playlist.Track) {
 // transitions, which advance audio without calling playTrack.
 func (m *Model) beginPlaybackTrack(track playlist.Track) (playlist.Track, tea.Cmd) {
 	m.resetTitleScroll()
+	previousGeneration := m.requests.stream
 	nextRequest(&m.requests.stream)
 	if m.player != nil {
 		m.player.CancelSeekYTDL()
-		m.player.SetPlaybackGeneration(m.requests.stream)
+		committed := m.player.SetPlaybackGeneration(m.requests.stream)
+		// The old start may have reached the engine before its result reached
+		// Update. Invalidation fences that commit before we replace the request.
+		if m.requestedTrackActive && committed != 0 && committed == previousGeneration {
+			m.commitPlaybackTrack()
+		}
 		m.player.ClearPreload()
 	}
 	nextRequest(&m.requests.preload)

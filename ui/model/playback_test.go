@@ -36,12 +36,14 @@ type playbackFakeEngine struct {
 	cancelSeekYTDLCalls int
 	stopCalls           int
 	playGeneration      uint64
+	committedPlayGen    uint64
 	preloadGeneration   uint64
 	eqBands             [eqBandCount]float64
 }
 
 func (f *playbackFakeEngine) Play(path string, _ time.Duration) error {
 	f.playing = true
+	f.committedPlayGen = 0
 	f.paused = false
 	f.playCalls = append(f.playCalls, path)
 	return nil
@@ -51,19 +53,25 @@ func (f *playbackFakeEngine) PlayAt(path string, dur, offset time.Duration) erro
 	return f.Play(path, dur)
 }
 func (f *playbackFakeEngine) PlayYTDL(string, time.Duration) error { return nil }
-func (f *playbackFakeEngine) SetPlaybackGeneration(generation uint64) {
+func (f *playbackFakeEngine) SetPlaybackGeneration(generation uint64) uint64 {
 	f.playGeneration = generation
+	return f.committedPlayGen
 }
 func (f *playbackFakeEngine) PlayAtForGeneration(path string, dur, offset time.Duration, generation uint64) error {
 	if f.playGeneration != generation {
 		return nil
 	}
-	return f.PlayAt(path, dur, offset)
+	err := f.PlayAt(path, dur, offset)
+	if err == nil {
+		f.committedPlayGen = generation
+	}
+	return err
 }
 func (f *playbackFakeEngine) PlayYTDLForGeneration(_ string, _ time.Duration, generation uint64) error {
 	if f.playGeneration != generation {
 		return nil
 	}
+	f.committedPlayGen = generation
 	return nil
 }
 func (f *playbackFakeEngine) Preload(path string, _ time.Duration) error {
@@ -95,6 +103,7 @@ func (f *playbackFakeEngine) ClearPreload() {
 func (f *playbackFakeEngine) Stop() {
 	f.stopCalls++
 	f.playing, f.paused = false, false
+	f.committedPlayGen = 0
 }
 func (f *playbackFakeEngine) Close()       {}
 func (f *playbackFakeEngine) TogglePause() { f.paused = !f.paused }

@@ -57,10 +57,11 @@ type Player struct {
 	// between a frame reaching the tap and the same frame being heard.
 	speakerBufferFrames int
 
-	gaplessAdvance atomic.Bool   // set when gapless transition fires
-	seekGen        atomic.Int64  // generation counter for yt-dlp seeks; incremented to cancel stale seeks
-	playGen        atomic.Uint64 // current UI playback request; rejects stale asynchronous starts
-	preloadGen     atomic.Uint64 // current preload request; rejects stale background preloads
+	gaplessAdvance   atomic.Bool   // set when gapless transition fires
+	seekGen          atomic.Int64  // generation counter for yt-dlp seeks; incremented to cancel stale seeks
+	playGen          atomic.Uint64 // current UI playback request; rejects stale asynchronous starts
+	committedPlayGen uint64        // last committed start; guarded by lifecycleMu
+	preloadGen       atomic.Uint64 // current preload request; rejects stale background preloads
 
 	lastPlayedDuration time.Duration // real duration of the track finished by the last gapless swap
 
@@ -193,10 +194,13 @@ func (p *Player) PlayAt(path string, knownDuration, offset time.Duration) error 
 // SetPlaybackGeneration invalidates asynchronous playback starts from older
 // UI requests. It waits for an in-progress source commit to finish so a new
 // generation cannot race its final ownership check.
-func (p *Player) SetPlaybackGeneration(generation uint64) {
+// It returns the last committed start's generation, or zero after an unguarded
+// start or Stop, so callers can account for starts whose result is still pending.
+func (p *Player) SetPlaybackGeneration(generation uint64) uint64 {
 	p.lifecycleMu.Lock()
+	defer p.lifecycleMu.Unlock()
 	p.playGen.Store(generation)
-	p.lifecycleMu.Unlock()
+	return p.committedPlayGen
 }
 
 // PlayAtForGeneration starts a stream only when generation is still current.
@@ -342,6 +346,7 @@ func (p *Player) playPipelineForGeneration(tp *trackPipeline, generation uint64)
 	if !started {
 		speaker.Play(p.ctrl)
 	}
+	p.committedPlayGen = generation
 	p.lifecycleMu.Unlock()
 	// Start API-based now-playing polling for streams without ICY metadata
 	// (no-op otherwise). Done here, not in buildPipeline, so preloaded
@@ -504,6 +509,7 @@ func (p *Player) Stop() {
 	p.paused.Store(false)
 	p.mu.Unlock()
 	speaker.Unlock()
+	p.committedPlayGen = 0
 	p.lifecycleMu.Unlock()
 
 	// Now safe to close decoder resources: speaker cannot be reading them.

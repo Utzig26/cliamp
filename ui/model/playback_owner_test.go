@@ -1,12 +1,153 @@
 package model
 
 import (
+	"encoding/binary"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/bjarneo/cliamp/playlist"
 )
+
+// A stream can commit in the real engine before its command result reaches
+// Update. A failed retry must retain that stream, even for duplicate paths
+// and regardless of the order in which the two results arrive.
+func TestCommittedStreamSurvivesFailedRetry(t *testing.T) {
+	if sharedPlayer == nil {
+		t.Skip("audio hardware unavailable")
+	}
+	aPath := filepath.Join(t.TempDir(), "a.wav")
+	if err := os.WriteFile(aPath, ownershipTestWAV(30), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bAudio := ownershipTestWAV(60)
+	for _, failureFirst := range []bool{false, true} {
+		name := "success result first"
+		if failureFirst {
+			name = "failure result first"
+		}
+		t.Run(name, func(t *testing.T) {
+			engine := sharedPlayer
+			engine.Stop()
+			var requests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if requests.Add(1) > 1 {
+					http.Error(w, "retry refused", http.StatusServiceUnavailable)
+					return
+				}
+				w.Header().Set("Content-Type", "audio/wav")
+				_, _ = w.Write(bAudio)
+			}))
+			defer server.Close()
+			defer engine.Stop()
+			a := playlist.Track{Path: aPath, Title: "A", DurationSecs: 30}
+			b := playlist.Track{Path: server.URL + "/b.wav", Title: "B", Stream: true, DurationSecs: 60}
+			pl := playlist.New()
+			pl.Add(a, b, b)
+			pl.SetIndex(0)
+			m := Model{player: engine, playlist: pl}
+			m.playTrack(a)
+			if m.err != nil || engine.Duration() != 30*time.Second {
+				t.Fatalf("start A: error=%v duration=%v", m.err, engine.Duration())
+			}
+			success := m.nextTrack()().(streamPlayedMsg)
+			if success.err != nil || engine.Duration() != 60*time.Second {
+				t.Fatalf("start B: error=%v duration=%v", success.err, engine.Duration())
+			}
+			failure := m.nextTrack()().(streamPlayedMsg)
+			if failure.err == nil {
+				t.Fatal("retry unexpectedly succeeded")
+			}
+			results := []streamPlayedMsg{success, failure}
+			if failureFirst {
+				results[0], results[1] = results[1], results[0]
+			}
+			for _, result := range results {
+				updated, _ := m.Update(result)
+				m = updated.(Model)
+			}
+			if !engine.IsPlaying() || engine.Duration() != 60*time.Second || requests.Load() != 2 {
+				t.Fatalf("engine playing=%t duration=%v requests=%d", engine.IsPlaying(), engine.Duration(), requests.Load())
+			}
+			if got, _ := m.currentPlaybackTrack(); got.Path != b.Path {
+				t.Fatalf("engine retained B but model reports %q", got.Title)
+			}
+			if m.buffering || m.requestedTrackActive || !errors.Is(m.err, failure.err) {
+				t.Fatalf("retry did not settle: buffering=%t pending=%t error=%v", m.buffering, m.requestedTrackActive, m.err)
+			}
+		})
+	}
+}
+
+// ownershipTestWAV produces silent stereo PCM with a distinct decoded duration,
+// allowing the real engine's active pipeline to be identified independently of
+// the model's track metadata.
+func ownershipTestWAV(seconds int) []byte {
+	data := make([]byte, 44+seconds*44100*4)
+	copy(data, "RIFF")
+	binary.LittleEndian.PutUint32(data[4:], uint32(len(data)-8))
+	copy(data[8:], "WAVEfmt ")
+	binary.LittleEndian.PutUint32(data[16:], 16)
+	binary.LittleEndian.PutUint16(data[20:], 1)
+	binary.LittleEndian.PutUint16(data[22:], 2)
+	binary.LittleEndian.PutUint32(data[24:], 44100)
+	binary.LittleEndian.PutUint32(data[28:], 44100*4)
+	binary.LittleEndian.PutUint16(data[32:], 4)
+	binary.LittleEndian.PutUint16(data[34:], 16)
+	copy(data[36:], "data")
+	binary.LittleEndian.PutUint32(data[40:], uint32(len(data)-44))
+	return data
+}
+
+func TestDelayedStreamResultKeepsCommittedOwner(t *testing.T) {
+	for _, path := range []string{"https://example.com/b.mp3", "https://www.youtube.com/watch?v=b"} {
+		for _, started := range []bool{false, true} {
+			name := path + "/superseded before start"
+			if started {
+				name = path + "/started before superseded"
+			}
+			t.Run(name, func(t *testing.T) {
+				a := playlist.Track{Path: "/music/a.flac", Title: "A"}
+				b := playlist.Track{Path: path, Title: "B", Stream: true}
+				pl := playlist.New()
+				pl.Add(a, b, b)
+				pl.SetIndex(0)
+				engine := &nowPlayingEngine{playbackFakeEngine: playbackFakeEngine{playing: true}}
+				m := Model{player: engine, playlist: pl}
+				m.setPlaybackTrack(a)
+				first := m.nextTrack()
+				var result streamPlayedMsg
+				if started {
+					result = first().(streamPlayedMsg)
+				}
+				retry := m.nextTrack()
+				if !started {
+					result = first().(streamPlayedMsg)
+				}
+				engine.startErr = errors.New("retry refused")
+				updated, _ := m.Update(result)
+				m = updated.(Model)
+				if !m.buffering || !m.requestedTrackActive {
+					t.Fatal("stale result settled the pending retry")
+				}
+				updated, _ = m.Update(retry())
+				m = updated.(Model)
+				want := a.Path
+				if started {
+					want = b.Path
+				}
+				if got, _ := m.currentPlaybackTrack(); got.Path != want {
+					t.Fatalf("current track = %q, want %q", got.Path, want)
+				}
+			})
+		}
+	}
+}
 
 // setPlaybackTrack records track as engine-owned in one step, for tests that
 // start from a playing state.

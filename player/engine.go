@@ -1,9 +1,18 @@
 package player
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 // Engine is the interface used by the TUI model to control audio playback.
 // It is satisfied by *Player and can be replaced with a mock for testing.
+// ErrSuperseded reports that a generation-guarded start was refused because a
+// newer request replaced it before the engine could switch sources. A nil
+// error from such a start means the engine did switch to it, even if a newer
+// request has replaced it since.
+var ErrSuperseded = errors.New("player: start superseded by a newer request")
+
 type Engine interface {
 	// Playback control
 	Play(path string, knownDuration time.Duration) error

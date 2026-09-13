@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"github.com/bjarneo/cliamp/player"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -56,13 +57,13 @@ func (f *playbackFakeEngine) SetPlaybackGeneration(generation uint64) {
 }
 func (f *playbackFakeEngine) PlayAtForGeneration(path string, dur, offset time.Duration, generation uint64) error {
 	if f.playGeneration != generation {
-		return nil
+		return player.ErrSuperseded
 	}
 	return f.PlayAt(path, dur, offset)
 }
 func (f *playbackFakeEngine) PlayYTDLForGeneration(_ string, _ time.Duration, generation uint64) error {
 	if f.playGeneration != generation {
-		return nil
+		return player.ErrSuperseded
 	}
 	return nil
 }
@@ -199,7 +200,7 @@ func TestStreamPlayedNotifiesOnceWithoutResume(t *testing.T) {
 	m.requestPlaybackTrack(track)
 	m.requests.stream = 1
 
-	updated, _ := m.Update(streamPlayedMsg{path: track.Path, gen: 1})
+	updated, _ := m.Update(streamPlayedMsg{track: track, gen: 1})
 	m = updated.(Model)
 	if len(notifier.updates) != 1 {
 		t.Fatalf("notifier updates = %d, want exactly 1", len(notifier.updates))
@@ -211,7 +212,7 @@ func TestPlayStreamCmdSkipsSupersededGeneration(t *testing.T) {
 	player.SetPlaybackGeneration(1)
 	started := make(chan struct{})
 	continueStart := make(chan struct{})
-	cmd := playStreamCmd(player, "https://example.com/stream", 0, func() time.Duration {
+	cmd := playStreamCmd(player, playlist.Track{Path: "https://example.com/stream"}, 0, func() time.Duration {
 		close(started)
 		<-continueStart
 		return 0
@@ -254,7 +255,7 @@ func TestStreamPlayedResumeKeepsNextTrackPreload(t *testing.T) {
 	m.SetResume(current.Path, 90)
 	m.requests.stream = 1
 
-	updated, cmd := m.Update(streamPlayedMsg{path: current.Path, gen: 1})
+	updated, cmd := m.Update(streamPlayedMsg{track: current, gen: 1})
 	m = updated.(Model)
 	if cmd == nil {
 		t.Fatal("streamPlayedMsg command = nil, want resume and preload batch")

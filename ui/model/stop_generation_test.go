@@ -1,10 +1,12 @@
 package model
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/bjarneo/cliamp/internal/playback"
 	"github.com/bjarneo/cliamp/ipc"
+	"github.com/bjarneo/cliamp/player"
 	"github.com/bjarneo/cliamp/playlist"
 )
 
@@ -71,8 +73,8 @@ func TestStopRefusesPendingStreamStart(t *testing.T) {
 			}
 
 			// The pipeline that was spinning up for the stopped track becomes ready now.
-			if err := engine.PlayAtForGeneration(track.Path, 0, 0, pending); err != nil {
-				t.Fatal(err)
+			if err := engine.PlayAtForGeneration(track.Path, 0, 0, pending); !errors.Is(err, player.ErrSuperseded) {
+				t.Fatalf("stale stream start error = %v, want ErrSuperseded", err)
 			}
 			if engine.playing {
 				t.Fatal("stale stream start began playback after the stop")

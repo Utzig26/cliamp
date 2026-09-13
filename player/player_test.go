@@ -2,6 +2,7 @@ package player
 
 import (
 	"bufio"
+	"errors"
 	"io"
 	"math"
 	"os"
@@ -96,8 +97,8 @@ func TestPlayPipelineForGenerationDiscardsStaleStart(t *testing.T) {
 	p := newTestPlayer()
 	p.SetPlaybackGeneration(2)
 
-	if err := p.playPipelineForGeneration(&trackPipeline{}, 1); err != nil {
-		t.Fatalf("playPipelineForGeneration: %v", err)
+	if err := p.playPipelineForGeneration(&trackPipeline{}, 1); !errors.Is(err, ErrSuperseded) {
+		t.Fatalf("playPipelineForGeneration error = %v, want ErrSuperseded", err)
 	}
 	if p.current != nil {
 		t.Fatal("stale playback start replaced the current pipeline")

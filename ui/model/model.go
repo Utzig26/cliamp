@@ -420,10 +420,15 @@ type Model struct {
 	// failed start leaves the owner playing.
 	playingTrack       playlist.Track
 	playingTrackActive bool
+	// playingTrackGen is the stream generation of the start that made
+	// playingTrack the owner, so a start the engine committed before a newer
+	// request replaced it can still be recognised as the one playing.
+	playingTrackGen uint64
 	// requestedTrack is the track the latest start was issued for, until the
 	// engine commits or refuses it.
 	requestedTrack       playlist.Track
 	requestedTrackActive bool
+	requestedTrackGen    uint64
 	playbackDetached     bool
 
 	notifier playback.Notifier

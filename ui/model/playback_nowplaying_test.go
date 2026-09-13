@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"github.com/bjarneo/cliamp/player"
 	"os"
 	"path/filepath"
 	"sync"
@@ -78,7 +79,7 @@ func (p *nowPlayingEngine) PlayAt(path string, duration, offset time.Duration) e
 
 func (p *nowPlayingEngine) PlayAtForGeneration(path string, duration, offset time.Duration, gen uint64) error {
 	if gen != p.playGeneration {
-		return nil
+		return player.ErrSuperseded
 	}
 	return p.PlayAt(path, duration, offset)
 }

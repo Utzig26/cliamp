@@ -737,8 +737,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case streamPlayedMsg:
+		if msg.gen != m.requests.stream {
+			// A newer request replaced this start; the engine may still have
+			// switched to it before that.
+			m.adoptSupersededStart(msg)
+			return m, nil
+		}
 		// Only the result of the start still requested may settle ownership.
-		if msg.gen != m.requests.stream || !m.requestedTrackActive || msg.path != m.requestedTrack.Path {
+		if !m.requestedTrackActive || msg.track.Path != m.requestedTrack.Path {
 			return m, nil
 		}
 		track := m.requestedTrack

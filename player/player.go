@@ -279,7 +279,7 @@ func (p *Player) playPipelineForGeneration(tp *trackPipeline, generation uint64)
 	if generation != 0 && p.playGen.Load() != generation {
 		p.lifecycleMu.Unlock()
 		go tp.close()
-		return nil
+		return ErrSuperseded
 	}
 	p.resumeSpeaker()
 

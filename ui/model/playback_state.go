@@ -32,6 +32,7 @@ func (m Model) currentPlaybackIsLive(track playlist.Track) bool {
 func (m *Model) requestPlaybackTrack(track playlist.Track) {
 	m.requestedTrack = track
 	m.requestedTrackActive = true
+	m.requestedTrackGen = m.requests.stream
 	m.playbackDetached = false
 }
 
@@ -39,8 +40,23 @@ func (m *Model) requestPlaybackTrack(track playlist.Track) {
 func (m *Model) commitPlaybackTrack() {
 	m.playingTrack = m.requestedTrack
 	m.playingTrackActive = true
+	m.playingTrackGen = m.requestedTrackGen
 	m.requestedTrack = playlist.Track{}
 	m.requestedTrackActive = false
+}
+
+// adoptSupersededStart handles the result of a start that a newer request
+// replaced before it settled. A nil error means the engine had already
+// switched to that track, and it keeps playing until the newer request lands,
+// so it becomes the owner unless a later start already did or playback
+// stopped since. A refused or failed start changed nothing.
+func (m *Model) adoptSupersededStart(msg streamPlayedMsg) {
+	if msg.err != nil || msg.gen <= m.playingTrackGen || m.player == nil || !m.player.IsPlaying() {
+		return
+	}
+	m.playingTrack = msg.track
+	m.playingTrackActive = true
+	m.playingTrackGen = msg.gen
 }
 
 // failPlaybackTrack drops the requested track after its start failed. The
@@ -75,8 +91,10 @@ func (m *Model) detachPlaybackTrack() {
 func (m *Model) clearPlaybackTrack() {
 	m.requestedTrack = playlist.Track{}
 	m.requestedTrackActive = false
+	m.requestedTrackGen = 0
 	m.playingTrack = playlist.Track{}
 	m.playingTrackActive = false
+	m.playingTrackGen = 0
 	m.playbackDetached = false
 }
 

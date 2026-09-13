@@ -207,9 +207,9 @@ func TestStaleAsyncResponsesDoNotChangeCurrentState(t *testing.T) {
 			gen:   1,
 		},
 		streamPlayedMsg{
-			path: "current.mp3",
-			gen:  1,
-			err:  errors.New("stale failure"),
+			track: playlist.Track{Path: "current.mp3"},
+			gen:   1,
+			err:   errors.New("stale failure"),
 		},
 	}
 	for _, msg := range updates {

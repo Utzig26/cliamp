@@ -445,16 +445,16 @@ func (m *Model) playTrack(track playlist.Track) tea.Cmd {
 		m.err = nil
 		dur := time.Duration(track.DurationSecs) * time.Second
 		if fetchCmd != nil {
-			return tea.Batch(playYTDLStreamCmd(m.player, track.Path, dur, m.requests.stream), fetchCmd)
+			return tea.Batch(playYTDLStreamCmd(m.player, track, dur, m.requests.stream), fetchCmd)
 		}
-		return playYTDLStreamCmd(m.player, track.Path, dur, m.requests.stream)
+		return playYTDLStreamCmd(m.player, track, dur, m.requests.stream)
 	}
 	dur := time.Duration(track.DurationSecs) * time.Second
 	if track.Stream {
 		m.buffering = true
 		m.bufferingAt = time.Now()
 		m.err = nil
-		return tea.Batch(playStreamCmd(m.player, track.Path, dur, m.startPosition(track), m.requests.stream), fetchCmd)
+		return tea.Batch(playStreamCmd(m.player, track, dur, m.startPosition(track), m.requests.stream), fetchCmd)
 	}
 	if err := m.player.PlayAt(track.Path, dur, m.startPosition(track)()); err != nil {
 		m.failPlaybackTrack()

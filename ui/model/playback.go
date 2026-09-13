@@ -441,9 +441,6 @@ func (m *Model) playTrack(track playlist.Track) tea.Cmd {
 		return resolveFeedTrackCmd(track.Path)
 	}
 	track, fetchCmd := m.beginPlaybackTrack(track)
-	// Emit track.change to plugins and report now-playing to the owning
-	// provider for every source, including yt-dlp streams below.
-	m.nowPlaying(track)
 
 	// Stream yt-dlp URLs (YouTube, SoundCloud, Bandcamp, etc.) via pipe chain.
 	if playlist.IsYTDL(track.Path) {
@@ -478,6 +475,7 @@ func (m *Model) playTrack(track playlist.Track) tea.Cmd {
 		// yt-dlp streams resume after streamPlayedMsg; local playback reaches
 		// this branch, where applyResume performs the seek synchronously.
 		m.applyResume()
+		m.nowPlaying(track)
 		m.backfillLoadedPlaylistDuration(track)
 		if fetchCmd != nil {
 			return tea.Batch(m.preloadNext(), fetchCmd)

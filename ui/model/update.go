@@ -752,6 +752,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.reconnect.attempts = 0
 			m.reconnect.at = time.Time{}
 			resumeCmd = m.applyResume()
+			m.nowPlaying(track)
 		}
 		m.notifyAll()
 		return m, tea.Batch(resumeCmd, m.preloadNext())

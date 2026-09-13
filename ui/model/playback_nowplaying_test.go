@@ -1,8 +1,11 @@
 package model
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,7 +21,8 @@ type nowPlayingProv struct {
 	reports chan playlist.Track
 }
 
-func TestPlayTrackEmitsPluginTrackChange(t *testing.T) {
+func newTrackChangeTestPlugin(t *testing.T) (*luaplugin.Manager, <-chan string, func()) {
+	t.Helper()
 	configDir := t.TempDir()
 	t.Setenv("CLIAMP_CONFIG_DIR", configDir)
 	pluginDir := filepath.Join(configDir, "plugins")
@@ -39,14 +43,15 @@ end)
 		t.Fatal(err)
 	}
 	mgr, err := luaplugin.New(nil, nil)
-	t.Cleanup(mgr.Close)
+	closePlugins := sync.OnceFunc(mgr.Close)
+	t.Cleanup(closePlugins)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !mgr.HasHook(luaplugin.EventTrackChange) {
 		t.Fatal("test plugin did not register track.change")
 	}
-	messages := make(chan string, 1)
+	messages := make(chan string, 4)
 	ctx := t.Context()
 	mgr.SetUIProvider(luaplugin.UIProvider{
 		ShowMessage: func(text string, _ time.Duration) {
@@ -56,36 +61,98 @@ end)
 			}
 		},
 	})
+	return mgr, messages, closePlugins
+}
 
-	for _, tc := range []struct {
-		name     string
-		path     string
-		reporter bool
-	}{
-		{"youtube without reporter", "https://www.youtube.com/watch?v=GBRAnuT48qo", false},
-		{"youtube with reporter", "https://www.youtube.com/watch?v=GBRAnuT48qo", true},
-		{"soundcloud without reporter", "https://soundcloud.com/artist/track", false},
-		{"soundcloud with reporter", "https://soundcloud.com/artist/track", true},
+type nowPlayingEngine struct {
+	playbackFakeEngine
+	startErr error
+}
+
+func (p *nowPlayingEngine) PlayAt(path string, duration, offset time.Duration) error {
+	if p.startErr != nil {
+		return p.startErr
+	}
+	return p.playbackFakeEngine.PlayAt(path, duration, offset)
+}
+
+func (p *nowPlayingEngine) PlayAtForGeneration(path string, duration, offset time.Duration, gen uint64) error {
+	if gen != p.playGeneration {
+		return nil
+	}
+	return p.PlayAt(path, duration, offset)
+}
+
+func (p *nowPlayingEngine) PlayYTDLForGeneration(path string, duration time.Duration, gen uint64) error {
+	return p.PlayAtForGeneration(path, duration, 0, gen)
+}
+
+func TestPlayTrackEmitsPluginTrackChange(t *testing.T) {
+	for _, path := range []string{
+		"/music/local.flac",
+		"https://example.com/stream.mp3",
+		"https://www.youtube.com/watch?v=GBRAnuT48qo",
+		"https://music.youtube.com/watch?v=GBRAnuT48qo",
+		"https://soundcloud.com/artist/track",
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			track := playlist.Track{Path: tc.path, Title: tc.name, Artist: "Artist", Stream: true}
-			pl := playlist.New()
-			pl.Add(track)
-			m := Model{player: &playbackFakeEngine{}, playlist: pl, luaMgr: mgr}
-			if tc.reporter {
-				prov := &nowPlayingProv{reports: make(chan playlist.Track, 1)}
-				m.providers = []ProviderEntry{{Key: "p", Name: "P", Provider: prov}}
+		for _, outcome := range []string{"started", "failed", "buffering", "superseded"} {
+			if !playlist.IsURL(path) && (outcome == "buffering" || outcome == "superseded") {
+				continue
 			}
-			m.playTrack(track)
-			select {
-			case got := <-messages:
-				if want := track.Path + "\n" + track.Artist + "\n" + track.Title; got != want {
-					t.Fatalf("plugin received %q, want %q", got, want)
-				}
-			case <-time.After(2 * time.Second):
-				t.Fatal("plugin did not receive track.change")
+			for _, reporter := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/reporter=%t", path, outcome, reporter), func(t *testing.T) {
+					mgr, messages, closePlugins := newTrackChangeTestPlugin(t)
+					track := playlist.Track{Path: path, Title: "Title", Artist: "Artist", Stream: playlist.IsURL(path)}
+					pl := playlist.New()
+					pl.Add(track)
+					engine := &nowPlayingEngine{}
+					if outcome == "failed" {
+						engine.startErr = errors.New("playback startup failed")
+					}
+					m := Model{player: engine, playlist: pl, luaMgr: mgr}
+					if reporter {
+						prov := &nowPlayingProv{reports: make(chan playlist.Track, 1)}
+						m.providers = []ProviderEntry{{Key: "p", Name: "P", Provider: prov}}
+					}
+					cmd := m.playTrack(track)
+					if track.Stream && outcome != "buffering" {
+						if outcome == "superseded" {
+							// A second request for the same path must invalidate the first.
+							m.playTrack(track)
+						}
+						if cmd == nil {
+							t.Fatal("missing stream playback command")
+						}
+						msg, ok := cmd().(streamPlayedMsg)
+						if !ok {
+							t.Fatal("playback command did not return streamPlayedMsg")
+						}
+						updated, _ := m.Update(msg)
+						m = updated.(Model)
+					}
+					if outcome == "failed" && !errors.Is(m.err, engine.startErr) {
+						t.Fatalf("playback error = %v, want %v", m.err, engine.startErr)
+					}
+					// Close waits for every asynchronous Lua callback before assertions.
+					closePlugins()
+					if outcome == "started" {
+						select {
+						case got := <-messages:
+							if want := track.Path + "\n" + track.Artist + "\n" + track.Title; got != want {
+								t.Fatalf("plugin received %q, want %q", got, want)
+							}
+						default:
+							t.Fatal("plugin did not receive track.change")
+						}
+					}
+					select {
+					case got := <-messages:
+						t.Fatalf("unexpected track.change: %q", got)
+					default:
+					}
+				})
 			}
-		})
+		}
 	}
 }
 
@@ -100,9 +167,8 @@ func (p *nowPlayingProv) ReportScrobble(playlist.Track, time.Duration, time.Dura
 	return nil
 }
 
-// TestPlayTrackFiresNowPlayingForEverySource guards against the yt-dlp branch
-// of playTrack returning before nowPlaying, which silently dropped the
-// track.change plugin event for YouTube and SoundCloud tracks.
+// TestPlayTrackFiresNowPlayingForEverySource checks provider reporting after
+// both synchronous and asynchronous playback starts.
 func TestPlayTrackFiresNowPlayingForEverySource(t *testing.T) {
 	for _, path := range []string{
 		"/music/local.flac",
@@ -121,7 +187,13 @@ func TestPlayTrackFiresNowPlayingForEverySource(t *testing.T) {
 				playlist:  pl,
 				providers: []ProviderEntry{{Key: "p", Name: "P", Provider: prov}},
 			}
-			m.playTrack(track)
+			cmd := m.playTrack(track)
+			if track.Stream {
+				if cmd == nil {
+					t.Fatal("missing stream playback command")
+				}
+				m.Update(cmd())
+			}
 			select {
 			case got := <-prov.reports:
 				if got.Path != path {

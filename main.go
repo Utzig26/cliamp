@@ -533,7 +533,7 @@ func run(overrides config.Overrides, positional []string, daemon, visualizer60FP
 						Album:  t.Album,
 						Path:   t.Path,
 						Index:  i,
-						Queued: pl.QueuePosition(i) >= 0,
+						Queued: pl.QueuePosition(i) > 0, // 1-based; 0 means not queued
 					}
 				}
 				return out

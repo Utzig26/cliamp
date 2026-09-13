@@ -757,7 +757,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.nowPlaying(track)
 		}
 		m.notifyAll()
-		return m, tea.Batch(resumeCmd, m.preloadNext())
+		preloadCmd := m.preloadNext()
+		return m, tea.Batch(resumeCmd, preloadCmd)
 
 	case streamPreloadedMsg:
 		if msg.gen != m.requests.preload {

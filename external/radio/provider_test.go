@@ -410,8 +410,8 @@ func TestFavoriteIDsRemainStableAfterRemovalAndReload(t *testing.T) {
 		{Name: "Same name", URL: "https://radio.example/third"},
 	}
 	for _, station := range stations {
-		if err := p.favorites.Add(station); err != nil {
-			t.Fatal(err)
+		if added, err := p.favorites.Toggle(station); err != nil || !added {
+			t.Fatalf("toggle = %v, %v", added, err)
 		}
 	}
 	ids := make([]string, 0, len(stations))

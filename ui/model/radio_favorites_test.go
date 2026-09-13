@@ -363,8 +363,8 @@ func TestRadioFavoriteRefreshKeepsSurvivingFavoriteSelection(t *testing.T) {
 				{Name: "Same name", URL: "https://radio.example/third"},
 			}
 			for _, station := range stations[:count] {
-				if err := m.radioFavorites.Add(station); err != nil {
-					t.Fatal(err)
+				if added, err := m.radioFavorites.Toggle(station); err != nil || !added {
+					t.Fatalf("toggle = %v, %v", added, err)
 				}
 			}
 			m.replacePlayerPlaylist(tracks)
@@ -601,8 +601,9 @@ func TestRadioMarkerCacheTracksInputs(t *testing.T) {
 	assertStar(false)
 	m.loadedPlaylist = ""
 	assertStar(true)
-	if err := m.radioFavorites.Remove(tracks[0].Path); err != nil {
-		t.Fatal(err)
+	station, _ := radio.StationFromTrack(tracks[0])
+	if added, err := m.radioFavorites.Toggle(station); err != nil || added {
+		t.Fatalf("toggle = %v, %v", added, err)
 	}
 	assertStar(false)
 
@@ -613,9 +614,8 @@ func TestRadioMarkerCacheTracksInputs(t *testing.T) {
 	if a.Revision() != b.Revision() {
 		t.Fatal("test needs equal revisions")
 	}
-	station, _ := radio.StationFromTrack(tracks[0])
-	if err := m.radioFavorites.Add(station); err != nil {
-		t.Fatal(err)
+	if added, err := m.radioFavorites.Toggle(station); err != nil || !added {
+		t.Fatalf("toggle = %v, %v", added, err)
 	}
 	m.playlist = a
 	assertStar(true)
@@ -655,27 +655,53 @@ func TestRadioMarkerCacheDoesNotCopyTracksOnRepaint(t *testing.T) {
 	}
 }
 
+// Compare warm repaints with a real revision change on every iteration. Keep
+// SetIndex near the start of the order so its own lookup does not dominate the
+// cost of recounting the playlist. Fixture construction and disk I/O are untimed.
 func BenchmarkRadioMarkerColumns(b *testing.B) {
 	b.Setenv("CLIAMP_CONFIG_DIR", b.TempDir())
 	favorites := radio.LoadFavorites()
-	if err := favorites.Add(radio.CatalogStation{Name: "Unrelated", URL: "https://radio.example/unrelated"}); err != nil {
-		b.Fatal(err)
+	if added, err := favorites.Toggle(radio.CatalogStation{Name: "Station 0", URL: "https://radio.example/0"}); err != nil || !added {
+		b.Fatalf("toggle = %v, %v", added, err)
 	}
-	for _, count := range []int{10, 10000} {
-		b.Run(fmt.Sprintf("tracks=%d", count), func(b *testing.B) {
-			m := keybindingTestModel()
-			m.SetRadioFavorites(favorites)
-			tracks := make([]playlist.Track, count)
-			for i := range tracks {
-				tracks[i] = playlist.Track{Path: "https://nav.example/track", Stream: true, ProviderMeta: map[string]string{"navidrome.id": "track"}}
+	for _, kind := range []string{"local", "provider", "radio"} {
+		for _, count := range []int{10, 2000, 20000} {
+			for _, advance := range []bool{false, true} {
+				b.Run(fmt.Sprintf("%s/tracks=%d/advance=%v", kind, count, advance), func(b *testing.B) {
+					m := keybindingTestModel()
+					m.SetRadioFavorites(favorites)
+					tracks := make([]playlist.Track, count)
+					for i := range tracks {
+						switch kind {
+						case "local":
+							tracks[i] = playlist.Track{Path: fmt.Sprintf("/music/%d.mp3", i)}
+						case "provider":
+							tracks[i] = playlist.Track{
+								Path: fmt.Sprintf("https://nav.example/%d", i), Stream: true,
+								ProviderMeta: map[string]string{"navidrome.id": fmt.Sprint(i)},
+							}
+						case "radio":
+							path := fmt.Sprintf("https://radio.example/%d", i)
+							tracks[i] = playlist.Track{
+								Path: path, Stream: true, Realtime: true,
+								ProviderMeta: map[string]string{"radio.name": fmt.Sprintf("Station %d", i), "radio.url": path},
+							}
+						}
+					}
+					m.replacePlayerPlaylist(tracks)
+					m.markerColumns()
+					nextIndex := 1
+					b.ReportAllocs()
+					for b.Loop() {
+						if advance {
+							m.playlist.SetIndex(nextIndex)
+							nextIndex = 1 - nextIndex
+						}
+						m.markerColumns()
+					}
+				})
 			}
-			m.replacePlayerPlaylist(tracks)
-			m.markerColumns() // Measure repeated rendering, not the initial derivation.
-			b.ReportAllocs()
-			for b.Loop() {
-				m.markerColumns()
-			}
-		})
+		}
 	}
 }
 
@@ -833,5 +859,135 @@ func TestHeartFavoriteHelpRequiresPlaylistFocus(t *testing.T) {
 				t.Fatal("heart favorite handler disagrees with help")
 			}
 		})
+	}
+}
+
+func TestRadioStarBadgeMatchesRows(t *testing.T) {
+	m, p, tracks := radioFavoriteTestModel(t)
+	if _, _, err := p.ToggleFavorite("c:0"); err != nil {
+		t.Fatal(err)
+	}
+	local := playlist.Track{Path: "/music/local.mp3", Title: "Local"}
+	bookmarked := local
+	bookmarked.Bookmark = true
+	unfavoritedBookmark := tracks[1]
+	unfavoritedBookmark.Bookmark = true
+	favoritedBookmark := tracks[0]
+	favoritedBookmark.Bookmark = true
+	wrapper := tracks[0]
+	wrapper.Path = "https://cdn.example/resolved"
+	offscreen := append(make([]playlist.Track, 100), tracks[0])
+	for _, tc := range []struct {
+		name   string
+		tracks []playlist.Track
+		saved  bool
+		want   int
+	}{
+		{name: "unrelated favorites", tracks: []playlist.Track{local}},
+		{name: "radio favorite", tracks: tracks, want: 1},
+		{name: "local bookmark", tracks: []playlist.Track{bookmarked}, want: 1},
+		{name: "mixed meanings", tracks: []playlist.Track{bookmarked, tracks[0]}, want: 2},
+		{name: "wrapper endpoints count as rows", tracks: []playlist.Track{tracks[0], wrapper}, want: 2},
+		{name: "radio favorite overrides bookmark", tracks: []playlist.Track{unfavoritedBookmark}},
+		{name: "no double count", tracks: []playlist.Track{favoritedBookmark}, want: 1},
+		{name: "saved playlist uses bookmarks", tracks: []playlist.Track{unfavoritedBookmark, tracks[0]}, saved: true, want: 1},
+		{name: "offscreen stars count", tracks: offscreen, want: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m.replacePlayerPlaylist(tc.tracks)
+			if tc.saved {
+				m.loadedPlaylist = "Saved"
+			}
+			header := ansi.Strip(m.renderPlaybackHeader())
+			if tc.want == 0 {
+				if strings.Contains(header, "[★ ") {
+					t.Fatalf("unexpected star badge: %s", header)
+				}
+			} else if !strings.Contains(header, fmt.Sprintf("[★ %d]", tc.want)) {
+				t.Fatalf("header = %s; want %d starred rows", header, tc.want)
+			}
+			if m.markerColumns().bookmark != (tc.want > 0) {
+				t.Fatal("star badge and column disagree")
+			}
+		})
+	}
+}
+
+func TestRadioStarBadgeCountInvalidation(t *testing.T) {
+	m, p, tracks := radioFavoriteTestModel(t)
+	m.replacePlayerPlaylist(tracks)
+	for _, step := range []struct {
+		id   string
+		want int
+	}{
+		{"c:0", 1},
+		{"c:1", 2},
+		{"c:0", 1},
+	} {
+		if _, _, err := p.ToggleFavorite(step.id); err != nil {
+			t.Fatal(err)
+		}
+		if header := ansi.Strip(m.renderPlaybackHeader()); !strings.Contains(header, fmt.Sprintf("[★ %d]", step.want)) {
+			t.Fatalf("stale count after toggling %s: %s", step.id, header)
+		}
+	}
+	m.playlist.Remove(1)
+	if strings.Contains(ansi.Strip(m.renderPlaybackHeader()), "[★ ") || m.markerColumns().bookmark {
+		t.Fatal("removed row still contributes a star")
+	}
+}
+
+func TestRadioFavoriteKeyFollowsDisplayedState(t *testing.T) {
+	for _, pane := range []string{"playback", "provider"} {
+		for _, remove := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/remove=%v", pane, remove), func(t *testing.T) {
+				m, p, tracks := radioFavoriteTestModel(t)
+				m.replacePlayerPlaylist(tracks)
+				if remove {
+					if _, _, err := p.ToggleFavorite("c:0"); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := m.refreshProviderListsNow(); err != nil {
+					t.Fatal(err)
+				}
+				selectedID := "c:0"
+				if remove {
+					selectedID = "f:" + tracks[0].Path
+				}
+				for i, row := range m.providerLists {
+					if row.ID == selectedID {
+						m.provCursor = i
+					}
+				}
+				if pane == "provider" {
+					m.focus = focusProvider
+				}
+				station, _ := radio.StationFromTrack(tracks[0])
+				remote := radio.LoadFavorites()
+				if _, err := remote.Toggle(station); err != nil {
+					t.Fatal(err)
+				}
+				if m.playlistTrackStarred(tracks[0]) != remove {
+					t.Fatal("test requires the displayed state to remain stale")
+				}
+				m.markerColumns() // Warm the cache before the local toggle.
+				updated, cmd := m.Update(tea.KeyPressMsg{Text: "f"})
+				m = updated.(Model)
+				if cmd != nil || m.playlistTrackStarred(tracks[0]) == remove || radio.LoadFavorites().Contains(station.URL) == remove {
+					t.Fatal("f did not apply the displayed add/remove intent")
+				}
+				if m.markerColumns().bookmark == remove {
+					t.Fatal("local toggle did not invalidate the star cache")
+				}
+				wantStatus := "Favorited"
+				if remove {
+					wantStatus = "Removed"
+				}
+				if !strings.Contains(m.status.text, wantStatus) {
+					t.Fatalf("feedback disagrees with visible intent: %s", m.status.text)
+				}
+			})
+		}
 	}
 }

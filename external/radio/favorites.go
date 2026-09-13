@@ -68,80 +68,67 @@ func (f *Favorites) Count() int {
 	return len(f.stations)
 }
 
-// Revision changes only after a successful mutation has been persisted.
+// Revision changes when a successful toggle publishes a new local snapshot.
 func (f *Favorites) Revision() uint64 {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	return f.revision
 }
 
-// Toggle adds or removes a station by URL. Failed writes leave memory unchanged.
+// Toggle applies the opposite of this instance's displayed membership to the
+// latest file contents. An intent already applied by another instance is a
+// successful no-op on disk, not a second toggle. The result is the new favorite
+// state. Failed persistence leaves the local snapshot unchanged.
 func (f *Favorites) Toggle(s CatalogStation) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	_, exists := f.byURL[s.URL]
-	if err := f.setLocked(s, !exists); err != nil {
-		return false, err
-	}
-	return !exists, nil
-}
-
-// Add adds a station to favorites and saves to disk.
-func (f *Favorites) Add(s CatalogStation) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.setLocked(s, true)
-}
-
-// Remove removes a station by URL from favorites and saves to disk.
-func (f *Favorites) Remove(url string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.setLocked(CatalogStation{URL: url}, false)
-}
-
-// setLocked persists a candidate snapshot before publishing it to readers.
-func (f *Favorites) setLocked(s CatalogStation, favorite bool) error {
-	_, exists := f.byURL[s.URL]
-	if exists == favorite {
-		return nil
-	}
-	stations := slices.Clone(f.stations)
-	if favorite {
-		stations = append(stations, s)
-	} else {
-		stations = slices.DeleteFunc(stations, func(station CatalogStation) bool {
-			return station.URL == s.URL
-		})
-	}
-	if err := f.save(stations); err != nil {
-		return fmt.Errorf("save radio favorites: %w", err)
-	}
-	f.stations = stations
-	f.revision++
-	if favorite {
-		if f.byURL == nil {
-			f.byURL = make(map[string]struct{})
-		}
-		f.byURL[s.URL] = struct{}{}
-	} else {
-		delete(f.byURL, s.URL)
-	}
-	return nil
-}
-
-func (f *Favorites) save(stations []CatalogStation) error {
+	_, wasFavorite := f.byURL[s.URL]
+	favorite := !wasFavorite
 	if f.path == "" {
 		dir, err := appdir.Dir()
 		if err != nil {
-			return err
+			return false, err
 		}
 		f.path = filepath.Join(dir, favoritesFile)
 	}
-	if err := os.MkdirAll(filepath.Dir(f.path), 0o755); err != nil {
-		return err
+	if err := os.MkdirAll(filepath.Dir(f.path), 0o700); err != nil {
+		return false, fmt.Errorf("create radio favorites directory: %w", err)
 	}
+	unlock, err := fileutil.LockFile(f.path + ".lock")
+	if err != nil {
+		return false, fmt.Errorf("lock radio favorites: %w", err)
+	}
+	defer func() { _ = unlock() }()
 
+	stations, err := loadFavoriteStations(f.path)
+	if err != nil {
+		return false, fmt.Errorf("load radio favorites: %w", err)
+	}
+	exists := slices.ContainsFunc(stations, func(station CatalogStation) bool {
+		return station.URL == s.URL
+	})
+	if exists != favorite {
+		if favorite {
+			stations = append(stations, s)
+		} else {
+			stations = slices.DeleteFunc(stations, func(station CatalogStation) bool {
+				return station.URL == s.URL
+			})
+		}
+		if err := f.save(stations); err != nil {
+			return false, fmt.Errorf("save radio favorites: %w", err)
+		}
+	}
+	f.stations = stations
+	f.byURL = make(map[string]struct{}, len(stations))
+	for _, station := range stations {
+		f.byURL[station.URL] = struct{}{}
+	}
+	f.revision++
+	return favorite, nil
+}
+
+func (f *Favorites) save(stations []CatalogStation) error {
 	// Build the full content in memory (writes to a Builder can't fail), then
 	// hand it to WriteFileAtomic so a partial or failed write can never
 	// truncate or corrupt the existing favorites file.

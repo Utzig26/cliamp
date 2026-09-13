@@ -168,22 +168,26 @@ type markerColumns struct {
 // title column as you scrolled. With no queue, bookmarks, or favorites the
 // titles start four columns further left.
 func (m Model) markerColumns() markerColumns {
-	cols := markerColumns{
+	return markerColumns{
 		queue:    m.playlist.QueueLen() > 0,
-		bookmark: m.playlist.BookmarkCount() > 0,
+		bookmark: m.playlistStarCount() > 0,
 		favorite: len(m.favSet) > 0,
 	}
-	if m.radioFavorites != nil {
-		cols.bookmark = m.radioMarkers.starred(m)
-	}
-	return cols
 }
 
-// radioMarkerCache memoizes a whole-playlist question without copying tracks
+// playlistStarCount uses the same meaning of a star as the individual rows.
+func (m Model) playlistStarCount() int {
+	if m.radioFavorites == nil {
+		return m.playlist.BookmarkCount()
+	}
+	return m.radioMarkers.starCount(m)
+}
+
+// radioMarkerCache memoizes the whole-playlist star count without copying tracks
 // every frame. Input revisions also cover mutations made outside key handlers.
 type radioMarkerCache struct {
-	key     radioMarkerKey
-	hasStar bool
+	key   radioMarkerKey
+	count int
 }
 
 type radioMarkerKey struct {
@@ -194,27 +198,27 @@ type radioMarkerKey struct {
 	savedPlaylist     bool
 }
 
-func (c *radioMarkerCache) starred(m Model) bool {
+func (c *radioMarkerCache) starCount(m Model) int {
 	key := radioMarkerKey{
 		playlist: m.playlist, playlistRevision: m.playlist.Revision(),
 		favorites: m.radioFavorites, favoritesRevision: m.radioFavorites.Revision(),
 		savedPlaylist: m.loadedPlaylist != "",
 	}
 	if c.key == key {
-		return c.hasStar
+		return c.count
 	}
-	hasStar := m.playlist.BookmarkCount() > 0
-	if !hasStar && !key.savedPlaylist && m.radioFavorites.Count() > 0 {
+	count := m.playlist.BookmarkCount()
+	if !key.savedPlaylist && (count > 0 || m.radioFavorites.Count() > 0) {
+		count = 0
 		for i := range m.playlist.Len() {
 			track, ok := m.playlist.Track(i)
 			if ok && m.playlistTrackStarred(track) {
-				hasStar = true
-				break
+				count++
 			}
 		}
 	}
-	c.key, c.hasStar = key, hasStar
-	return hasStar
+	c.key, c.count = key, count
+	return count
 }
 
 // cursorLine renders a list item with "> " prefix when active, "  " otherwise.

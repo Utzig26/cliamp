@@ -99,8 +99,10 @@ countries, regions, genres, and tags. The action follows the highlighted station
 not necessarily the one playing, and still works after switching providers.
 
 Favorites appear under **Radio → Favorites** and show a star in the playback
-playlist. Radio favorites do not reserve a star column in playlists containing
-no favorited stations. They are saved locally in `~/.config/cliamp/radio_favorites.toml`,
+playlist. The header's star badge counts all starred rows, including offscreen
+rows, using the same meaning as the row markers. Radio favorites do not reserve
+a star column in playlists containing no favorited stations. They are saved
+locally in `~/.config/cliamp/radio_favorites.toml`,
 deduplicated by station URL. The saved name is the station name, not the current
 song, and station details including the region are retained after restart.
 M3U/PLS wrapper stations keep their original station URL when resolved
@@ -108,6 +110,14 @@ to a playback stream. Toggling a favorite keeps the provider highlight on the
 same surviving station, and completed catalog pages remain visible even when
 favorites change during loading. Favoriting does not fetch more catalog stations
 or interrupt an in-progress station load. Press `f` again to remove a favorite.
+
+On Linux and macOS, favorite mutations use the latest file contents under a
+shared file lock, preserving changes made by other cliamp instances. The action
+follows the star displayed in this instance: an unstarred station is favorited,
+and a starred station is unfavorited. If another instance already made that change,
+it is not reversed. Already-open players pick up other instances' changes on their
+next favorite mutation or restart, not through live refresh. On Windows, use only
+one writer per config directory.
 
 For IPC clients, favorite IDs are stable `f:<station URL>` values returned by
 `provider.playlists`. Use those IDs for subsequent operations; positional

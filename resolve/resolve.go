@@ -626,6 +626,11 @@ func resolveYTDLRangePageContext(ctx context.Context, pageURL string, start, end
 	if _, err := exec.LookPath("yt-dlp"); err != nil {
 		return nil, 0, fmt.Errorf("yt-dlp not found in PATH — see https://github.com/yt-dlp/yt-dlp#installation")
 	}
+	ctx, finish, err := pendingYTDL.Start(ctx)
+	if err != nil {
+		return nil, 0, fmt.Errorf("yt-dlp: %w", err)
+	}
+	defer finish()
 
 	args := []string{"--flat-playlist", "-j", "--socket-timeout", "15"}
 	if cookies.IsZero() {
@@ -645,10 +650,14 @@ func resolveYTDLRangePageContext(ctx context.Context, pageURL string, start, end
 	}
 	args = append(args, "--", pageURL)
 	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
+	cmd.WaitDelay = 3 * time.Second
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	stdout, err := cmd.Output()
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, 0, fmt.Errorf("yt-dlp: resolve %s: %w", pageURL, ctxErr)
+		}
 		msg := strings.TrimSpace(stderr.String())
 		if msg != "" {
 			return nil, 0, fmt.Errorf("yt-dlp: %s", msg)
@@ -710,6 +719,11 @@ func DownloadYTDL(pageURL, saveDir string) (string, error) {
 	if _, err := exec.LookPath("yt-dlp"); err != nil {
 		return "", fmt.Errorf("yt-dlp not found in PATH")
 	}
+	ctx, finish, err := pendingYTDL.Start(context.Background())
+	if err != nil {
+		return "", fmt.Errorf("yt-dlp: %w", err)
+	}
+	defer finish()
 
 	outTemplate := filepath.Join(saveDir, "%(artist,uploader)s - %(title)s.%(ext)s")
 	args := []string{
@@ -725,11 +739,15 @@ func DownloadYTDL(pageURL, saveDir string) (string, error) {
 	defer cleanupCookies()
 	args = append(args, cookieArgs...)
 	args = append(args, "--", pageURL)
-	cmd := exec.Command("yt-dlp", args...)
+	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
+	cmd.WaitDelay = 3 * time.Second
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	stdout, err := cmd.Output()
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return "", fmt.Errorf("yt-dlp: download %s: %w", pageURL, ctxErr)
+		}
 		msg := strings.TrimSpace(stderr.String())
 		if msg != "" {
 			return "", fmt.Errorf("yt-dlp: %s", msg)

@@ -989,7 +989,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case playback.QuitMsg:
 		m.flushPendingSpeedSave()
 		m.flushPendingEQSave()
-		m.player.Close()
+		// Shutdown, not Close: see quit handling in keys.go.
+		m.player.Shutdown()
 		m.clearPlaybackTrack()
 		m.quitting = true
 		return m, tea.Quit

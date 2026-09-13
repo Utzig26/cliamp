@@ -42,7 +42,9 @@ func (m *Model) quit() tea.Cmd {
 
 	m.flushPendingSpeedSave()
 	m.flushPendingEQSave()
-	m.player.Close()
+	// Shutdown, not Close: the join on yt-dlp process exit happens in main's
+	// deferred Close, off the event loop, so quitting never freezes the UI.
+	m.player.Shutdown()
 	m.clearPlaybackTrack()
 	m.quitting = true
 	return tea.Quit

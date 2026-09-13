@@ -103,9 +103,11 @@ func restoreJellyfinContext(state resume.State, prov *jellyfin.Provider) ([]play
 }
 
 func run(overrides config.Overrides, positional []string, daemon, visualizer60FPS bool) error {
-	// Runs last: removes the session directory of private cookie copies,
-	// including any copy whose yt-dlp process has not reported its exit.
+	// Runs last: by then every yt-dlp process has been joined, so removing the
+	// session directory catches any private cookie copy that was left behind.
 	defer ytdlcookies.Shutdown()
+	// UI commands can still be resolving URLs after the event loop exits.
+	defer resolve.ShutdownYTDL()
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("config: %w", err)

@@ -97,6 +97,7 @@ func (f *playbackFakeEngine) Stop() {
 	f.playing, f.paused = false, false
 }
 func (f *playbackFakeEngine) Close()       {}
+func (f *playbackFakeEngine) Shutdown()    {}
 func (f *playbackFakeEngine) TogglePause() { f.paused = !f.paused }
 func (f *playbackFakeEngine) Seek(d time.Duration) error {
 	f.seekCalls = append(f.seekCalls, d)

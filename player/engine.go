@@ -19,6 +19,7 @@ type Engine interface {
 	PreloadYTDLForGeneration(pageURL string, knownDuration time.Duration, generation uint64) error
 	ClearPreload()
 	Stop()
+	Shutdown()
 	Close()
 	TogglePause()
 

@@ -3,6 +3,7 @@ package player
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -94,7 +95,7 @@ func TestYTDLPipeCookieCopyRemovedOnClose(t *testing.T) {
 	ytdlcookies.SetForHost("cookies.example", ytdlcookies.Source{File: cookieFile})
 	t.Cleanup(func() { ytdlcookies.SetForHost("cookies.example", ytdlcookies.Source{}) })
 
-	decoder, _, err := decodeYTDLPipe("https://cookies.example/track", beep.SampleRate(44100), 16, 0)
+	decoder, _, err := decodeYTDLPipe(context.Background(), "https://cookies.example/track", beep.SampleRate(44100), 16, 0)
 	if err != nil {
 		t.Fatalf("decodeYTDLPipe() error = %v", err)
 	}
@@ -103,6 +104,40 @@ func TestYTDLPipeCookieCopyRemovedOnClose(t *testing.T) {
 	}
 	if left := cookieCopies(t, tmp); len(left) != 0 {
 		t.Fatalf("cookie copies left after Close: %v", left)
+	}
+}
+
+func TestPlayerCloseOwnsReadyYTDLPipeline(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses POSIX process fixtures")
+	}
+	dir := t.TempDir()
+	t.Setenv("TMPDIR", dir)
+	resetCookieDir(t)
+	t.Setenv("PATH", dir)
+	writeExecutable(t, filepath.Join(dir, "yt-dlp"), "#!/bin/sh\nprintf '\\001\\002\\003\\004'\nexec /bin/sleep 30\n")
+	writeExecutable(t, filepath.Join(dir, "ffmpeg"), "#!/bin/sh\nexec /bin/cat\n")
+	source := filepath.Join(dir, "source.txt")
+	if err := os.WriteFile(source, []byte("# Netscape HTTP Cookie File\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ytdlcookies.SetForHost("ready.example", ytdlcookies.Source{File: source})
+	t.Cleanup(func() { ytdlcookies.SetForHost("ready.example", ytdlcookies.Source{}) })
+	p := &Player{sr: 44100, bitDepth: 16, gapless: &gaplessStreamer{}, suspended: true}
+	t.Cleanup(p.Close)
+	tp, err := p.buildYTDLPipeline("https://ready.example/track", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(tp.close)
+	copies := cookieCopies(t, dir)
+	if len(copies) != 1 {
+		t.Fatalf("expected a live pipeline's cookie copy: %v", copies)
+	}
+	// The caller has not installed the ready pipeline or closed its decoder.
+	p.Close()
+	if _, err := os.Stat(copies[0]); !os.IsNotExist(err) {
+		t.Fatalf("uninstalled pipeline's cookie copy remains after Close: %v", err)
 	}
 }
 

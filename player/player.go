@@ -2,12 +2,14 @@ package player
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/bjarneo/cliamp/internal/workgroup"
 	"github.com/gopxl/beep/v2"
 	"github.com/gopxl/beep/v2/speaker"
 )
@@ -71,7 +73,19 @@ type Player struct {
 
 	streamMetaResolver StreamMetadataResolver // optional: API-based now-playing for streams without ICY
 	metaCancel         context.CancelFunc     // cancels the active metadata poller; guarded by mu
+
+	// closed rejects source commits from asynchronous starts that finish
+	// after Shutdown. It covers every pipeline kind, so it is separate from the
+	// yt-dlp group's cancellation. Guarded by mu.
+	closed bool
+	// ytdl owns duration probes and yt-dlp pipelines, including those still
+	// buffering or awaiting installation, through process exit and cookie
+	// copy removal. Shutdown cancels it; Close joins it.
+	ytdl workgroup.Group
 }
+
+// errPlayerClosed is returned when work is requested after Shutdown or Close.
+var errPlayerClosed = errors.New("player is closed")
 
 // StreamMetadataResolver matches a stream URL to a now-playing fetcher for
 // broadcasters that carry no inline ICY metadata (e.g. NTS, FIP) and instead
@@ -236,9 +250,17 @@ func (p *Player) PlayYTDLForGeneration(pageURL string, knownDuration time.Durati
 
 func (p *Player) playYTDL(pageURL string, knownDuration time.Duration, generation uint64, requireCurrent bool) error {
 	// Probe duration concurrently with pipeline setup so it doesn't delay playback.
-	probeCh := make(chan time.Duration, 1)
+	var probeCh <-chan time.Duration
+	var cancelProbe context.CancelFunc
 	if knownDuration == 0 {
-		go func() { probeCh <- probeYTDLDuration(pageURL) }()
+		var err error
+		probeCh, cancelProbe, err = p.startDurationProbe(pageURL)
+		if err != nil {
+			return err
+		}
+		// Setup failure and the duration wait deadline both abandon the result.
+		// Cancel without delaying playback; Close joins the probe's cleanup.
+		defer cancelProbe()
 	}
 	tp, err := p.buildYTDLPipeline(pageURL, 0)
 	if err != nil {
@@ -259,6 +281,7 @@ func (p *Player) playYTDL(pageURL string, knownDuration time.Duration, generatio
 			// Probe still running — start playback without duration.
 			// The seek bar won't show progress but audio plays immediately.
 		}
+		cancelProbe()
 	}
 	tp.knownDuration = knownDuration
 	if requireCurrent {
@@ -276,9 +299,15 @@ func (p *Player) playPipeline(tp *trackPipeline) error {
 
 func (p *Player) playPipelineForGeneration(tp *trackPipeline, generation uint64) error {
 	p.lifecycleMu.Lock()
-	if generation != 0 && p.playGen.Load() != generation {
+	p.mu.Lock()
+	closed := p.closed
+	p.mu.Unlock()
+	if closed || (generation != 0 && p.playGen.Load() != generation) {
 		p.lifecycleMu.Unlock()
 		go tp.close()
+		if closed {
+			return errPlayerClosed
+		}
 		return nil
 	}
 	p.resumeSpeaker()
@@ -409,10 +438,14 @@ func (p *Player) preloadPipelineForGeneration(tp *trackPipeline, generation uint
 	// in-flight transition reads from the old pipeline we're about to close.
 	speaker.Lock()
 	p.mu.Lock()
-	if generation != 0 && p.preloadGen.Load() != generation {
+	closed := p.closed
+	if closed || (generation != 0 && p.preloadGen.Load() != generation) {
 		p.mu.Unlock()
 		speaker.Unlock()
 		go tp.close()
+		if closed {
+			return errPlayerClosed
+		}
 		return nil
 	}
 	old := p.nextPipeline
@@ -696,7 +729,7 @@ func (p *Player) SeekYTDL(d time.Duration) error {
 func (p *Player) commitYTDLSeek(cur, replacement *trackPipeline, gen int64) bool {
 	speaker.Lock()
 	p.mu.Lock()
-	if p.seekGen.Load() != gen || p.current != cur {
+	if p.closed || p.seekGen.Load() != gen || p.current != cur {
 		p.mu.Unlock()
 		speaker.Unlock()
 		return false
@@ -724,7 +757,7 @@ func (p *Player) restoreYTDLSeekSource(cur *trackPipeline, gen int64) {
 	}
 	speaker.Lock()
 	p.mu.Lock()
-	stillCurrent := p.current == cur && p.seekGen.Load() == gen
+	stillCurrent := !p.closed && p.current == cur && p.seekGen.Load() == gen
 	if stillCurrent {
 		p.gapless.Replace(cur.stream)
 		p.gaplessAdvance.Store(false)
@@ -1165,8 +1198,26 @@ func (p *Player) resumeSpeaker() {
 	p.suspended = false
 }
 
-// Close fully stops the speaker and cleans up all resources.
-func (p *Player) Close() {
+// Shutdown stops playback, cancels yt-dlp work and refuses new work, without
+// waiting for the yt-dlp processes to exit. The UI calls it on quit so the
+// event loop never blocks; Close completes the join.
+func (p *Player) Shutdown() {
+	// Cancel first so blocked yt-dlp reads release the speaker lock, including
+	// when a source commit is already waiting for it while holding lifecycleMu.
+	p.ytdl.Shutdown()
+	p.lifecycleMu.Lock()
+	p.mu.Lock()
+	p.closed = true
+	p.mu.Unlock()
+	p.lifecycleMu.Unlock()
+
 	p.Stop()
 	speaker.Clear()
+}
+
+// Close is Shutdown followed by waiting for every yt-dlp process the player
+// started to exit and remove its private cookie copy.
+func (p *Player) Close() {
+	p.Shutdown()
+	p.ytdl.Wait()
 }

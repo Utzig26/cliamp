@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bjarneo/cliamp/internal/workgroup"
 	"github.com/bjarneo/cliamp/internal/ytdlcookies"
 	"github.com/bjarneo/cliamp/playlist"
 	"github.com/bjarneo/cliamp/provider"
@@ -31,15 +32,15 @@ const (
 )
 
 type cookieBase struct {
-	cookies     ytdlcookies.Source
-	fetchFn     func(ctx context.Context, cookies ytdlcookies.Source) ([]playlist.PlaylistInfo, error)
-	resolveFn   func(ctx context.Context, pageURL string, start, count int, cookies ytdlcookies.Source) ([]playlist.Track, int, error)
-	mu          sync.Mutex
-	playlists   []playlist.PlaylistInfo
-	trackCache  map[string][]playlist.Track
-	generation  uint64
-	nextLoad    uint64
-	loadCancels map[uint64]context.CancelFunc
+	cookies   ytdlcookies.Source
+	fetchFn   func(ctx context.Context, cookies ytdlcookies.Source) ([]playlist.PlaylistInfo, error)
+	resolveFn func(ctx context.Context, pageURL string, start, count int, cookies ytdlcookies.Source) ([]playlist.Track, int, error)
+	loads     workgroup.Group // in-flight yt-dlp requests: Refresh cancels them, Close joins them
+
+	mu         sync.Mutex
+	playlists  []playlist.PlaylistInfo
+	trackCache map[string][]playlist.Track
+	generation uint64 // bumped by refresh and close so stale loads are not cached
 }
 
 const (
@@ -49,10 +50,9 @@ const (
 
 func newCookieBase(cookies ytdlcookies.Source) *cookieBase {
 	return &cookieBase{
-		cookies:     cookies,
-		fetchFn:     resolve.FetchUserPlaylistsContext,
-		trackCache:  make(map[string][]playlist.Track),
-		loadCancels: make(map[uint64]context.CancelFunc),
+		cookies:    cookies,
+		fetchFn:    resolve.FetchUserPlaylistsContext,
+		trackCache: make(map[string][]playlist.Track),
 	}
 }
 
@@ -66,11 +66,17 @@ func (b *cookieBase) fetchPlaylists() ([]playlist.PlaylistInfo, error) {
 	generation := b.generation
 	b.mu.Unlock()
 
+	ctx, finish, err := b.loads.Start(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	defer finish()
+
 	fn := b.fetchFn
 	if fn == nil {
 		fn = resolve.FetchUserPlaylistsContext
 	}
-	pls, err := fn(context.Background(), b.cookies)
+	pls, err := fn(ctx, b.cookies)
 	if err != nil {
 		return nil, fmt.Errorf("ytmusic: fetch playlists: %w", err)
 	}
@@ -93,21 +99,15 @@ func (b *cookieBase) fetchTracks(target string) ([]playlist.Track, error) {
 		return cached, nil
 	}
 	generation := b.generation
-
-	ctx, cancel := context.WithTimeout(context.Background(), cookiePlaylistLoadTimeout)
-	b.nextLoad++
-	loadID := b.nextLoad
-	if b.loadCancels == nil {
-		b.loadCancels = make(map[uint64]context.CancelFunc)
-	}
-	b.loadCancels[loadID] = cancel
 	b.mu.Unlock()
-	defer func() {
-		b.mu.Lock()
-		delete(b.loadCancels, loadID)
-		b.mu.Unlock()
-		cancel()
-	}()
+
+	ctx, finish, err := b.loads.Start(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	defer finish()
+	ctx, cancel := context.WithTimeout(ctx, cookiePlaylistLoadTimeout)
+	defer cancel()
 
 	resolveBatch := b.resolveFn
 	if resolveBatch == nil {
@@ -137,23 +137,17 @@ func (b *cookieBase) fetchTracks(target string) ([]playlist.Track, error) {
 func (b *cookieBase) refresh() {
 	b.mu.Lock()
 	b.generation++
-	for _, cancel := range b.loadCancels {
-		cancel()
-	}
-	clear(b.loadCancels)
 	b.playlists = nil
 	clear(b.trackCache)
 	b.mu.Unlock()
+	b.loads.Cancel()
 }
 
 func (b *cookieBase) close() {
 	b.mu.Lock()
 	b.generation++
-	for _, cancel := range b.loadCancels {
-		cancel()
-	}
-	clear(b.loadCancels)
 	b.mu.Unlock()
+	b.loads.Close()
 }
 
 // CookieProvider provides YouTube and YouTube Music playlist access using
@@ -295,6 +289,11 @@ func (p *CookieProvider) SearchTracks(ctx context.Context, query string, limit i
 	if limit <= 0 {
 		limit = 10
 	}
+	ctx, finish, err := p.base.loads.Start(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer finish()
 	tracks, err := resolve.ResolveYTDLBatchContext(ctx, fmt.Sprintf("ytsearch%d:%s", limit, q), 0, 0, p.base.cookies)
 	if err != nil {
 		return nil, fmt.Errorf("ytmusic: search tracks: %w", err)
@@ -302,10 +301,10 @@ func (p *CookieProvider) SearchTracks(ctx context.Context, query string, limit i
 	return tracks, nil
 }
 
-// Refresh clears the cached playlists.
+// Refresh clears the cached playlists and abandons loads in progress.
 func (p *CookieProvider) Refresh() {
 	p.base.refresh()
 }
 
-// Close cancels in-flight playlist loads.
+// Close cancels in-flight requests and waits for their cookie cleanup.
 func (p *CookieProvider) Close() { p.base.close() }

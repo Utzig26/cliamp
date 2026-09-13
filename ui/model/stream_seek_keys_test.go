@@ -37,6 +37,7 @@ func (f *fakeEngine) PreloadYTDLForGeneration(path string, dur time.Duration, _ 
 func (f *fakeEngine) ClearPreload()                                       {}
 func (f *fakeEngine) Stop()                                               {}
 func (f *fakeEngine) Close()                                              {}
+func (f *fakeEngine) Shutdown()                                           {}
 func (f *fakeEngine) TogglePause()                                        {}
 func (f *fakeEngine) Seek(d time.Duration) error                          { f.seekCalls = append(f.seekCalls, d); return nil }
 func (f *fakeEngine) SeekYTDL(time.Duration) error                        { return nil }

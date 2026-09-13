@@ -42,7 +42,10 @@ cookies_file = "/home/you/.config/cliamp/youtube-cookies.txt"
 
 `cookies_file` takes precedence when both keys are set. A leading `~` is
 expanded; the file is handed to yt-dlp as `--cookies` via a private copy, so
-the export itself is never modified.
+the export itself is never modified. Normal exit cancels pending yt-dlp playback,
+playlist loading, searches, and downloads, then waits for their private cookie
+copies to be removed. This includes incremental playlist batches still loading
+in the background.
 
 ### Option 2: Custom Google Cloud OAuth client
 

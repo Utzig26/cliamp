@@ -106,6 +106,11 @@ func FetchUserPlaylistsContext(ctx context.Context, cookies ytdlcookies.Source) 
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+	ctx, finish, err := pendingYTDL.Start(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("yt-dlp: %w", err)
+	}
+	defer finish()
 
 	args := []string{"--flat-playlist", "-j", "--socket-timeout", "15"}
 	if cookies.IsZero() {

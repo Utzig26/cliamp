@@ -118,6 +118,47 @@ func TestPreloadPipelineForGenerationDiscardsStalePreload(t *testing.T) {
 	}
 }
 
+func TestClosedPlayerDiscardsReadyPipeline(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		install func(*Player, *trackPipeline) error
+	}{
+		{"play", (*Player).playPipeline},
+		{"preload", (*Player).preloadPipeline},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &Player{gapless: &gaplessStreamer{}, suspended: true}
+			decoder := newPlaybackTestDecoder()
+			tp := &trackPipeline{decoder: decoder, stream: decoder}
+			p.Close()
+			if err := tt.install(p, tp); err == nil {
+				t.Fatal("pipeline accepted after Close")
+			}
+			if p.current != nil || p.nextPipeline != nil {
+				t.Fatal("pipeline installed after Close")
+			}
+			select {
+			case <-decoder.closed:
+			case <-time.After(time.Second):
+				t.Fatal("rejected pipeline was not closed")
+			}
+		})
+	}
+}
+
+func TestYTDLSeekCannotRestorePlaybackDuringShutdown(t *testing.T) {
+	decoder := newPlaybackTestDecoder()
+	cur := &trackPipeline{decoder: decoder, stream: decoder, ytdlSeek: true}
+	p := &Player{gapless: &gaplessStreamer{}, current: cur, closed: true}
+	if p.commitYTDLSeek(cur, &trackPipeline{}, 0) {
+		t.Fatal("seek committed during shutdown")
+	}
+	p.restoreYTDLSeekSource(cur, 0)
+	if p.gapless.current != nil {
+		t.Fatal("failed seek restored playback during shutdown")
+	}
+}
+
 func TestSetVolumeMinClamps(t *testing.T) {
 	p := newTestPlayer()
 

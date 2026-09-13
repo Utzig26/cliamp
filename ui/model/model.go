@@ -413,12 +413,18 @@ type Model struct {
 	// Live stream title from ICY metadata (e.g., "Artist - Song")
 	streamTitle string
 
-	// playingTrack is the track currently owned by the audio engine. It can differ
-	// from playlist.Current() after browsing loads a new provider playlist while
-	// the old track keeps playing.
+	// playingTrack is the track the audio engine owns. It can differ from
+	// playlist.Current() after browsing loads a new provider playlist while
+	// the old track keeps playing, and from requestedTrack while a start is
+	// pending: the engine builds a replacement before swapping sources, so a
+	// failed start leaves the owner playing.
 	playingTrack       playlist.Track
 	playingTrackActive bool
-	playbackDetached   bool
+	// requestedTrack is the track the latest start was issued for, until the
+	// engine commits or refuses it.
+	requestedTrack       playlist.Track
+	requestedTrackActive bool
+	playbackDetached     bool
 
 	notifier playback.Notifier
 

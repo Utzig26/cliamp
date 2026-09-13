@@ -2,8 +2,14 @@ package model
 
 import "github.com/bjarneo/cliamp/playlist"
 
+// currentPlaybackTrack returns the track playback is about: the one a start
+// is buffering for, else the one the engine owns while it plays, else the
+// playlist's current track. A negative index means there is no such track.
 func (m Model) currentPlaybackTrack() (playlist.Track, int) {
-	if m.playingTrackActive && (m.buffering || (m.player != nil && m.player.IsPlaying())) {
+	if m.buffering && m.requestedTrackActive {
+		return m.requestedTrack, 0
+	}
+	if m.playingTrackActive && m.player != nil && m.player.IsPlaying() {
 		return m.playingTrack, 0
 	}
 	if m.playlist == nil {
@@ -20,23 +26,55 @@ func (m Model) currentPlaybackIsLive(track playlist.Track) bool {
 	return ok && reporter.IsLiveStream()
 }
 
-func (m *Model) setPlaybackTrack(track playlist.Track) {
-	m.playingTrack = track
-	m.playingTrackActive = true
+// requestPlaybackTrack records the track a start was issued for. Ownership
+// moves to it only once the engine has it (commitPlaybackTrack), because a
+// start that fails leaves whatever was playing untouched.
+func (m *Model) requestPlaybackTrack(track playlist.Track) {
+	m.requestedTrack = track
+	m.requestedTrackActive = true
 	m.playbackDetached = false
 }
 
-func (m *Model) detachPlaybackTrack() {
-	track, idx := m.currentPlaybackTrack()
-	if idx < 0 {
-		return
-	}
-	m.playingTrack = track
+// commitPlaybackTrack makes the requested track the engine-owned one.
+func (m *Model) commitPlaybackTrack() {
+	m.playingTrack = m.requestedTrack
 	m.playingTrackActive = true
+	m.requestedTrack = playlist.Track{}
+	m.requestedTrackActive = false
+}
+
+// failPlaybackTrack drops the requested track after its start failed. The
+// previous owner keeps playing when the engine still has it, paused or not;
+// otherwise nothing is owned.
+func (m *Model) failPlaybackTrack() {
+	m.requestedTrack = playlist.Track{}
+	m.requestedTrackActive = false
+	if m.player == nil || !m.player.IsPlaying() {
+		m.clearPlaybackTrack()
+	}
+}
+
+// detachPlaybackTrack marks playback as no longer belonging to the playlist,
+// after the playlist was replaced under a playing or starting track. A start
+// still pending commits into the detached state.
+func (m *Model) detachPlaybackTrack() {
+	if !m.requestedTrackActive && !m.playingTrackActive {
+		if m.playlist == nil {
+			return
+		}
+		track, idx := m.playlist.Current()
+		if idx < 0 {
+			return
+		}
+		m.playingTrack = track
+		m.playingTrackActive = true
+	}
 	m.playbackDetached = true
 }
 
 func (m *Model) clearPlaybackTrack() {
+	m.requestedTrack = playlist.Track{}
+	m.requestedTrackActive = false
 	m.playingTrack = playlist.Track{}
 	m.playingTrackActive = false
 	m.playbackDetached = false

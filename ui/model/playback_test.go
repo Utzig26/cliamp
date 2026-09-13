@@ -196,6 +196,7 @@ func TestStreamPlayedNotifiesOnceWithoutResume(t *testing.T) {
 		notifier:  notifier,
 		buffering: true,
 	}
+	m.requestPlaybackTrack(track)
 	m.requests.stream = 1
 
 	updated, _ := m.Update(streamPlayedMsg{path: track.Path, gen: 1})
@@ -249,6 +250,7 @@ func TestStreamPlayedResumeKeepsNextTrackPreload(t *testing.T) {
 	player := &playbackFakeEngine{playing: true, ytdlSeek: true, seekable: true, duration: time.Hour}
 	notifier := &fakeNotifier{}
 	m := Model{player: player, playlist: pl, notifier: notifier, buffering: true}
+	m.requestPlaybackTrack(current)
 	m.SetResume(current.Path, 90)
 	m.requests.stream = 1
 

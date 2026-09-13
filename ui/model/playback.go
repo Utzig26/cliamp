@@ -457,6 +457,7 @@ func (m *Model) playTrack(track playlist.Track) tea.Cmd {
 		return tea.Batch(playStreamCmd(m.player, track.Path, dur, m.startPosition(track), m.requests.stream), fetchCmd)
 	}
 	if err := m.player.PlayAt(track.Path, dur, m.startPosition(track)()); err != nil {
+		m.failPlaybackTrack()
 		// Provider session went stale (e.g. Spotify auth expired and
 		// silent reconnect failed). Surface the standard sign-in
 		// overlay rather than the raw stream error.
@@ -467,6 +468,7 @@ func (m *Model) playTrack(track playlist.Track) tea.Cmd {
 			m.err = err
 		}
 	} else {
+		m.commitPlaybackTrack()
 		m.err = nil
 		// yt-dlp streams resume after streamPlayedMsg; local playback reaches
 		// this branch, where applyResume performs the seek synchronously.
@@ -544,7 +546,7 @@ func (m *Model) beginPlaybackTrack(track playlist.Track) (playlist.Track, tea.Cm
 		}
 	}
 	m.setPlaybackContext(context, index)
-	m.setPlaybackTrack(track)
+	m.requestPlaybackTrack(track)
 	positionSec := 0
 	if m.resume.path == track.Path {
 		positionSec = m.resume.secs

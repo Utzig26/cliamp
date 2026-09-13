@@ -1235,7 +1235,7 @@ func (m *setupModel) viewResult() string {
 		b.WriteString("\n\n")
 		b.WriteString(m.saveFailed.Error())
 		b.WriteString("\n\n")
-		b.WriteString(hintStyle.Render("Press any key to return to the menu."))
+		b.WriteString(hintStyle.Render("Press Enter or Esc to return to the menu, or q to quit."))
 		return m.card(b.String())
 	}
 
@@ -1254,7 +1254,7 @@ func (m *setupModel) viewResult() string {
 		b.WriteString(errStyle.Render("✗ "))
 		b.WriteString(m.resultErr.Error())
 		b.WriteString("\n\n")
-		b.WriteString(hintStyle.Render("Press any key to return to the menu."))
+		b.WriteString(hintStyle.Render("Press Enter or Esc to return to the menu, or q to quit."))
 		return m.card(b.String())
 	}
 
@@ -1266,7 +1266,7 @@ func (m *setupModel) viewResult() string {
 	b.WriteString("\n\n")
 	b.WriteString(dimStyle.Render(m.cfgPath))
 	b.WriteString("\n\n")
-	b.WriteString(hintStyle.Render("Press any key to configure another provider, or q to quit."))
+	b.WriteString(hintStyle.Render("Press Enter or Esc to configure another provider, or q to quit."))
 	return m.card(b.String())
 }
 
@@ -1285,7 +1285,7 @@ func (m *setupModel) viewFooter() string {
 		if m.awaitingSave {
 			keys = "y save anyway   n cancel  q quit"
 		} else {
-			keys = "any key continue   q quit"
+			keys = "enter/esc continue   q quit"
 		}
 	}
 	return dimStyle.Render(keys)

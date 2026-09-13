@@ -91,24 +91,32 @@ func parseYTDLPlaylistFeed(r io.Reader) ([]playlist.PlaylistInfo, error) {
 }
 
 // FetchUserPlaylists invokes yt-dlp to scrape user playlists from
-// https://www.youtube.com/feed/playlists using the specified browser session.
-// If browser is empty, the cookie source configured for YouTube is used.
-func FetchUserPlaylists(browser string) ([]playlist.PlaylistInfo, error) {
+// https://www.youtube.com/feed/playlists using the given cookie source.
+// If cookies is zero, the source configured for YouTube is used.
+func FetchUserPlaylists(cookies ytdlcookies.Source) ([]playlist.PlaylistInfo, error) {
+	return FetchUserPlaylistsContext(context.Background(), cookies)
+}
+
+// FetchUserPlaylistsContext fetches the playlist feed with caller cancellation
+// and a maximum request duration of 30 seconds.
+func FetchUserPlaylistsContext(ctx context.Context, cookies ytdlcookies.Source) ([]playlist.PlaylistInfo, error) {
 	if _, err := exec.LookPath("yt-dlp"); err != nil {
 		return nil, fmt.Errorf("yt-dlp not found in PATH — see https://github.com/yt-dlp/yt-dlp#installation")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	args := []string{"--flat-playlist", "-j", "--socket-timeout", "15"}
-	b := strings.TrimSpace(browser)
-	if b == "" {
-		b = ytdlcookies.ForURL("https://www.youtube.com/feed/playlists")
+	if cookies.IsZero() {
+		cookies = ytdlcookies.ForURL("https://www.youtube.com/feed/playlists")
 	}
-	if b != "" {
-		args = append(args, "--cookies-from-browser", b)
+	cookieArgs, cleanupCookies, err := cookies.Prepare()
+	if err != nil {
+		return nil, fmt.Errorf("yt-dlp cookies: %w", err)
 	}
+	defer cleanupCookies()
+	args = append(args, cookieArgs...)
 	args = append(args, "--", "https://www.youtube.com/feed/playlists")
 
 	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
@@ -117,8 +125,8 @@ func FetchUserPlaylists(browser string) ([]playlist.PlaylistInfo, error) {
 	cmd.Stderr = &stderr
 	stdout, err := cmd.Output()
 	if err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			return nil, fmt.Errorf("yt-dlp: timed out fetching playlists (30s)")
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, fmt.Errorf("yt-dlp: fetch playlists: %w", ctxErr)
 		}
 		msg := strings.TrimSpace(stderr.String())
 		if msg != "" {

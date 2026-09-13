@@ -2,12 +2,15 @@ package netease
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/bjarneo/cliamp/internal/ytdlcookies"
 	"github.com/bjarneo/cliamp/provider"
 )
 
@@ -131,6 +134,55 @@ func TestCookieHeaderFromNetscapeFileFiltersNetEaseCookies(t *testing.T) {
 	}
 	if header != "MUSIC_U=abc; __csrf=def" {
 		t.Fatalf("header = %q", header)
+	}
+}
+
+func TestAccountUsesCookiesFileWithoutYTDLP(t *testing.T) {
+	t.Setenv("PATH", t.TempDir()) // no yt-dlp: a cookies file must not need it
+	path := t.TempDir() + "/cookies.txt"
+	data := strings.Join([]string{
+		"# Netscape HTTP Cookie File",
+		".music.163.com\tTRUE\t/\tTRUE\t0\tMUSIC_U\tabc",
+		".example.com\tTRUE\t/\tTRUE\t0\tOTHER\tignored",
+		"",
+	}, "\n")
+	if err := osWriteFile(path, data); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Cookie"); got != "MUSIC_U=abc" {
+			t.Errorf("Cookie header = %q, want MUSIC_U=abc", got)
+		}
+		w.Write([]byte(`{"code":200,"account":{"id":42},"profile":{"userId":42,"nickname":"alice"}}`))
+	}))
+	defer srv.Close()
+
+	p := newWithBase(Config{Enabled: true, Cookies: ytdlcookies.Source{Browser: "chrome", File: path}}, srv.URL)
+	acc, err := p.Account(context.Background())
+	if err != nil {
+		t.Fatalf("Account() error = %v", err)
+	}
+	if acc.UserID != "42" || acc.Nickname != "alice" {
+		t.Fatalf("account = %+v", acc)
+	}
+}
+
+func TestAccountReportsMissingCookiesFileWithContext(t *testing.T) {
+	p := newWithBase(Config{Enabled: true, Cookies: ytdlcookies.Source{File: t.TempDir() + "/missing.txt"}}, "http://127.0.0.1:0")
+	_, err := p.Account(context.Background())
+	if err == nil || !strings.HasPrefix(err.Error(), "netease: read cookies file: ") || !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("Account() error = %v, want netease-prefixed error wrapping fs.ErrNotExist", err)
+	}
+}
+
+func TestAccountRejectsCookiesFileWithoutNetEaseCookies(t *testing.T) {
+	path := t.TempDir() + "/cookies.txt"
+	if err := osWriteFile(path, ".example.com\tTRUE\t/\tTRUE\t0\tOTHER\tignored\n"); err != nil {
+		t.Fatal(err)
+	}
+	p := newWithBase(Config{Enabled: true, Cookies: ytdlcookies.Source{File: path}}, "http://127.0.0.1:0")
+	if _, err := p.Account(context.Background()); err == nil || !strings.Contains(err.Error(), "no NetEase cookies found") {
+		t.Fatalf("Account() error = %v, want missing-cookies error", err)
 	}
 }
 

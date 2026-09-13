@@ -38,11 +38,14 @@ func YTDLPAvailable() bool {
 	return err == nil
 }
 
-func appendYTDLCookieArgs(args []string, pageURL string) []string {
-	if browser := ytdlcookies.ForURL(pageURL); browser != "" {
-		return append(args, "--cookies-from-browser", browser)
+// appendYTDLCookieArgs adds the cookie flags for pageURL's host. Call cleanup
+// after the yt-dlp process has exited.
+func appendYTDLCookieArgs(args []string, pageURL string) ([]string, func(), error) {
+	cookieArgs, cleanup, err := ytdlcookies.ForURL(pageURL).Prepare()
+	if err != nil {
+		return nil, cleanup, fmt.Errorf("yt-dlp cookies: %w", err)
 	}
-	return args
+	return append(args, cookieArgs...), cleanup, nil
 }
 
 // probeYTDLDuration runs a quick yt-dlp --print duration to obtain
@@ -51,7 +54,13 @@ func probeYTDLDuration(pageURL string) time.Duration {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	args := []string{"--skip-download", "--no-playlist", "--socket-timeout", "10", "--print", "duration"}
-	args = appendYTDLCookieArgs(args, pageURL)
+	args, cleanupCookies, err := appendYTDLCookieArgs(args, pageURL)
+	if err != nil {
+		// The probe is best effort: playback reports the cookie error itself,
+		// so here it only means the seek bar shows no duration.
+		return 0
+	}
+	defer cleanupCookies()
 	// "--" stops yt-dlp parsing pageURL as a flag. Callers gate on
 	// playlist.IsURL, but keep the terminator so a future caller cannot turn
 	// a crafted URL into --exec and reach arbitrary command execution.
@@ -269,11 +278,16 @@ func (y *ytdlPipeStreamer) Close() error {
 // channel: a wrapped error preferring captured stderr over the bare exit code
 // on failure, or nil on clean exit. The channel is buffered so the goroutine
 // always completes even with no receiver (e.g. after Close kills the process).
-func monitorExit(cmd *exec.Cmd, stderr *limitedBuffer, name string) (<-chan error, <-chan struct{}) {
+// If provided, onExit runs after Wait and before the done channel closes.
+func monitorExit(cmd *exec.Cmd, stderr *limitedBuffer, name string, onExit func()) (<-chan error, <-chan struct{}) {
 	ch := make(chan error, 1)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		// Publish done only after process-owned resources have been released.
+		if onExit != nil {
+			defer onExit()
+		}
 		err := cmd.Wait()
 		switch trimmed := strings.TrimSpace(stderr.String()); {
 		case err == nil:
@@ -318,7 +332,12 @@ func decodeYTDLPipe(pageURL string, sr beep.SampleRate, bitDepth, startSec int) 
 		"--socket-timeout", "15",
 		"-o", "-",
 	}
-	ytdlArgs = appendYTDLCookieArgs(ytdlArgs, pageURL)
+	ytdlArgs, cleanupCookies, err := appendYTDLCookieArgs(ytdlArgs, pageURL)
+	if err != nil {
+		pr.Close()
+		pw.Close()
+		return nil, beep.Format{}, err
+	}
 	ytdlArgs = append(ytdlArgs, "--", pageURL)
 	ytdlCmd := exec.Command("yt-dlp", ytdlArgs...)
 	ytdlCmd.Stdout = pw
@@ -327,6 +346,7 @@ func decodeYTDLPipe(pageURL string, sr beep.SampleRate, bitDepth, startSec int) 
 	if err := ytdlCmd.Start(); err != nil {
 		pr.Close()
 		pw.Close()
+		cleanupCookies()
 		return nil, beep.Format{}, fmt.Errorf("yt-dlp start: %w", err)
 	}
 
@@ -356,6 +376,7 @@ func decodeYTDLPipe(pageURL string, sr beep.SampleRate, bitDepth, startSec int) 
 		pr.Close()
 		ytdlCmd.Process.Kill()
 		ytdlCmd.Wait()
+		cleanupCookies()
 		return nil, beep.Format{}, fmt.Errorf("ffmpeg stdout pipe: %w", err)
 	}
 	if err := ffmpegCmd.Start(); err != nil {
@@ -363,6 +384,7 @@ func decodeYTDLPipe(pageURL string, sr beep.SampleRate, bitDepth, startSec int) 
 		pr.Close()
 		ytdlCmd.Process.Kill()
 		ytdlCmd.Wait()
+		cleanupCookies()
 		return nil, beep.Format{}, fmt.Errorf("ffmpeg start: %w", err)
 	}
 
@@ -375,8 +397,8 @@ func decodeYTDLPipe(pageURL string, sr beep.SampleRate, bitDepth, startSec int) 
 	// Monitor each process's exit so we can surface why the pipe closed. A
 	// process's stderr is only safe to read after Wait() returns, so the
 	// capture happens inside monitorExit.
-	ytdlErrCh, ytdlDone := monitorExit(ytdlCmd, &ytdlStderr, "yt-dlp")
-	ffmpegErrCh, ffmpegDone := monitorExit(ffmpegCmd, &ffmpegStderr, "ffmpeg")
+	ytdlErrCh, ytdlDone := monitorExit(ytdlCmd, &ytdlStderr, "yt-dlp", cleanupCookies)
+	ffmpegErrCh, ffmpegDone := monitorExit(ffmpegCmd, &ffmpegStderr, "ffmpeg", nil)
 
 	format := beep.Format{
 		SampleRate:  sr,

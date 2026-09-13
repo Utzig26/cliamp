@@ -9,11 +9,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/bjarneo/cliamp/internal/ytdlcookies"
 	"github.com/bjarneo/cliamp/playlist"
 )
 
@@ -277,7 +279,7 @@ func TestResolveYTDLBatchCookieSelection(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("skipping Unix shell script test on Windows")
 	}
-	t.Cleanup(func() { SetYTDLCookiesForHost("example.com", "") })
+	t.Cleanup(func() { ytdlcookies.SetForHost("example.com", ytdlcookies.Source{}) })
 
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "ytdlp_args.log")
@@ -291,8 +293,8 @@ func TestResolveYTDLBatchCookieSelection(t *testing.T) {
 	t.Setenv("PATH", tmpDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	// 1. Fall back to cookies configured for the URL's host.
-	SetYTDLCookiesForHost("example.com", "firefox")
-	_, _ = ResolveYTDLBatch("https://example.com/playlist", 0, 0)
+	ytdlcookies.SetForHost("example.com", ytdlcookies.Source{Browser: "firefox"})
+	_, _ = ResolveYTDLBatch("https://example.com/playlist", 0, 0, ytdlcookies.Source{})
 
 	logged, err := os.ReadFile(logFile)
 	if err != nil {
@@ -302,8 +304,8 @@ func TestResolveYTDLBatchCookieSelection(t *testing.T) {
 		t.Errorf("expected host cookies 'firefox' in args, got: %s", string(logged))
 	}
 
-	// 2. An explicit browser overrides the host cookie source.
-	_, _ = ResolveYTDLBatch("https://example.com/playlist", 0, 0, "chrome")
+	// 2. An explicit source overrides the host cookie source.
+	_, _ = ResolveYTDLBatch("https://example.com/playlist", 0, 0, ytdlcookies.Source{Browser: "chrome"})
 	logged, err = os.ReadFile(logFile)
 	if err != nil {
 		t.Fatal(err)
@@ -313,6 +315,40 @@ func TestResolveYTDLBatchCookieSelection(t *testing.T) {
 	}
 	if strings.Contains(string(logged), "--cookies-from-browser firefox") {
 		t.Errorf("did not expect host cookies 'firefox' in args, got: %s", string(logged))
+	}
+
+	// 3. A cookies file becomes --cookies <private copy> and replaces the
+	// browser flag; the copy is removed once yt-dlp has exited.
+	cookieFile := filepath.Join(tmpDir, "cookies.txt")
+	if err := os.WriteFile(cookieFile, []byte("# Netscape HTTP Cookie File\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ytdlcookies.SetForHost("example.com", ytdlcookies.Source{File: cookieFile})
+	_, _ = ResolveYTDLBatch("https://example.com/playlist", 0, 0, ytdlcookies.Source{})
+	logged, err = os.ReadFile(logFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := strings.Fields(string(logged))
+	i := slices.Index(fields, "--cookies")
+	if i < 0 || i+1 >= len(fields) || slices.Contains(fields, "--cookies-from-browser") {
+		t.Fatalf("expected only --cookies <copy> in args, got: %s", string(logged))
+	}
+	if copyPath := fields[i+1]; copyPath == cookieFile {
+		t.Errorf("yt-dlp was handed the configured cookies file itself; want a private copy")
+	} else if _, err := os.Stat(copyPath); !os.IsNotExist(err) {
+		t.Errorf("private cookie copy %s not removed after yt-dlp exited (err=%v)", copyPath, err)
+	}
+
+	// 4. An unreadable cookies file is an error before yt-dlp runs; yt-dlp
+	// would otherwise proceed with an empty jar and create the file.
+	os.Remove(logFile)
+	ytdlcookies.SetForHost("example.com", ytdlcookies.Source{File: filepath.Join(tmpDir, "missing.txt")})
+	if _, err := ResolveYTDLBatch("https://example.com/playlist", 0, 0, ytdlcookies.Source{}); err == nil || !strings.Contains(err.Error(), "cookies") {
+		t.Fatalf("ResolveYTDLBatch() error = %v, want a cookies file error", err)
+	}
+	if _, err := os.Stat(logFile); !os.IsNotExist(err) {
+		t.Errorf("yt-dlp was invoked despite the cookies error (log err=%v)", err)
 	}
 }
 

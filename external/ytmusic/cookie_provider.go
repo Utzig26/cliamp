@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bjarneo/cliamp/internal/ytdlcookies"
 	"github.com/bjarneo/cliamp/playlist"
 	"github.com/bjarneo/cliamp/provider"
 	"github.com/bjarneo/cliamp/resolve"
@@ -30,9 +31,9 @@ const (
 )
 
 type cookieBase struct {
-	browser     string
-	fetchFn     func(browser string) ([]playlist.PlaylistInfo, error)
-	resolveFn   func(ctx context.Context, pageURL string, start, count int, browser ...string) ([]playlist.Track, int, error)
+	cookies     ytdlcookies.Source
+	fetchFn     func(ctx context.Context, cookies ytdlcookies.Source) ([]playlist.PlaylistInfo, error)
+	resolveFn   func(ctx context.Context, pageURL string, start, count int, cookies ytdlcookies.Source) ([]playlist.Track, int, error)
 	mu          sync.Mutex
 	playlists   []playlist.PlaylistInfo
 	trackCache  map[string][]playlist.Track
@@ -46,10 +47,10 @@ const (
 	cookiePlaylistLoadTimeout = 5 * time.Minute
 )
 
-func newCookieBase(browser string) *cookieBase {
+func newCookieBase(cookies ytdlcookies.Source) *cookieBase {
 	return &cookieBase{
-		browser:     browser,
-		fetchFn:     resolve.FetchUserPlaylists,
+		cookies:     cookies,
+		fetchFn:     resolve.FetchUserPlaylistsContext,
 		trackCache:  make(map[string][]playlist.Track),
 		loadCancels: make(map[uint64]context.CancelFunc),
 	}
@@ -63,14 +64,13 @@ func (b *cookieBase) fetchPlaylists() ([]playlist.PlaylistInfo, error) {
 		return res, nil
 	}
 	generation := b.generation
-
 	b.mu.Unlock()
 
 	fn := b.fetchFn
 	if fn == nil {
-		fn = resolve.FetchUserPlaylists
+		fn = resolve.FetchUserPlaylistsContext
 	}
-	pls, err := fn(b.browser)
+	pls, err := fn(context.Background(), b.cookies)
 	if err != nil {
 		return nil, fmt.Errorf("ytmusic: fetch playlists: %w", err)
 	}
@@ -115,7 +115,7 @@ func (b *cookieBase) fetchTracks(target string) ([]playlist.Track, error) {
 	}
 	var tracks []playlist.Track
 	for start := 0; ; {
-		batch, entries, err := resolveBatch(ctx, target, start, cookiePlaylistBatchSize, b.browser)
+		batch, entries, err := resolveBatch(ctx, target, start, cookiePlaylistBatchSize, b.cookies)
 		if err != nil {
 			return nil, fmt.Errorf("ytmusic: resolve playlist tracks: %w", err)
 		}
@@ -157,7 +157,8 @@ func (b *cookieBase) close() {
 }
 
 // CookieProvider provides YouTube and YouTube Music playlist access using
-// browser cookies via yt-dlp, without requiring Google Cloud OAuth credentials.
+// browser or cookies.txt cookies via yt-dlp, without requiring Google Cloud
+// OAuth credentials.
 type CookieProvider struct {
 	base *cookieBase
 	kind ProviderKind
@@ -171,9 +172,8 @@ type CookieProviders struct {
 }
 
 // NewCookieProviders creates cookie-backed YouTube providers for Music, Video, and All.
-func NewCookieProviders(browser string) CookieProviders {
-	browser = strings.TrimSpace(browser)
-	base := newCookieBase(browser)
+func NewCookieProviders(cookies ytdlcookies.Source) CookieProviders {
+	base := newCookieBase(cookies)
 	return CookieProviders{
 		Music: &CookieProvider{base: base, kind: KindMusic},
 		Video: &CookieProvider{base: base, kind: KindVideo},
@@ -182,10 +182,9 @@ func NewCookieProviders(browser string) CookieProviders {
 }
 
 // NewCookieProvider creates a single cookie-backed YouTube provider of the given kind.
-func NewCookieProvider(browser string, kind ProviderKind) *CookieProvider {
-	browser = strings.TrimSpace(browser)
+func NewCookieProvider(cookies ytdlcookies.Source, kind ProviderKind) *CookieProvider {
 	return &CookieProvider{
-		base: newCookieBase(browser),
+		base: newCookieBase(cookies),
 		kind: kind,
 	}
 }
@@ -296,7 +295,7 @@ func (p *CookieProvider) SearchTracks(ctx context.Context, query string, limit i
 	if limit <= 0 {
 		limit = 10
 	}
-	tracks, err := resolve.ResolveYTDLBatchContext(ctx, fmt.Sprintf("ytsearch%d:%s", limit, q), 0, 0, p.base.browser)
+	tracks, err := resolve.ResolveYTDLBatchContext(ctx, fmt.Sprintf("ytsearch%d:%s", limit, q), 0, 0, p.base.cookies)
 	if err != nil {
 		return nil, fmt.Errorf("ytmusic: search tracks: %w", err)
 	}
@@ -308,5 +307,5 @@ func (p *CookieProvider) Refresh() {
 	p.base.refresh()
 }
 
-// Close releases any held resources.
+// Close cancels in-flight playlist loads.
 func (p *CookieProvider) Close() { p.base.close() }

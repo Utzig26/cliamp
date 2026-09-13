@@ -250,6 +250,10 @@ installed yt-dlp version can also support custom profiles such as
 `chrome:Profile 1` or `firefox:default-release`. Run `yt-dlp --help` and inspect
 `--cookies-from-browser` for the current list.
 
+Without a browser on the machine, set `cookies_file` to a Netscape-format
+`cookies.txt` exported from a signed-in browser; cliamp passes it as
+`--cookies`. `cookies_file` wins when both keys are set.
+
 yt-dlp does not currently expose Arc as a separate cookie source. Select a
 supported browser where you are signed in to Mixcloud. On macOS, an
 `Operation not permitted` error while reading `~/Library` means that the terminal
@@ -317,6 +321,7 @@ the player silent.
 | `username` | empty | Public profile URL username for account views when no token is set |
 | `access_token` | empty | Developer OAuth token for `/me/` and Listen Later |
 | `cookies_from` | empty | Browser/profile sent to yt-dlp for signed-in playback |
+| `cookies_file` | empty | Netscape `cookies.txt` sent to yt-dlp instead of a browser; takes precedence over `cookies_from` |
 | `styles` | cliamp default style list | Local genre favorites. Each produces Latest and Popular provider rows and show sort modes. |
 | `max_items` | `100` | Maximum shows, creators, or collections per view. Setup accepts 1 to 500. Manual values at or below zero use the default. Values above 500 use 500. |
 | `stream_creators` | `20` | Maximum followed creators for the following stream. Setup accepts 1 to 100. Manual values at or below zero use the default. Values above 100 use 100. |

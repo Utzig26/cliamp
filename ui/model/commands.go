@@ -9,6 +9,7 @@ import (
 
 	"github.com/bjarneo/cliamp/history"
 	"github.com/bjarneo/cliamp/internal/playback"
+	"github.com/bjarneo/cliamp/internal/ytdlcookies"
 	"github.com/bjarneo/cliamp/lyrics"
 	"github.com/bjarneo/cliamp/player"
 	"github.com/bjarneo/cliamp/playlist"
@@ -219,7 +220,7 @@ func fetchPlaylistsCmd(prov playlist.Provider, gen uint64) tea.Cmd {
 
 func fetchYTDLBatchCmd(gen uint64, pageURL string, start, count int) tea.Cmd {
 	return func() tea.Msg {
-		tracks, err := resolve.ResolveYTDLBatch(pageURL, start, count)
+		tracks, err := resolve.ResolveYTDLBatch(pageURL, start, count, ytdlcookies.Source{})
 		return ytdlBatchMsg{gen: gen, tracks: tracks, err: err}
 	}
 }

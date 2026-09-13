@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+
+	"github.com/bjarneo/cliamp/internal/ytdlcookies"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -591,6 +593,7 @@ func TestYouTubeMusicIsSetOrFallback(t *testing.T) {
 	}{
 		{"enabled section", YouTubeMusicConfig{Enabled: true}, nil, true},
 		{"cookies_from set", YouTubeMusicConfig{CookiesFrom: "chrome"}, nil, true},
+		{"cookies_file set", YouTubeMusicConfig{CookiesFile: "/tmp/cookies.txt"}, nil, true},
 		{"cookies_from whitespace only", YouTubeMusicConfig{CookiesFrom: "   "}, nil, false},
 		{"cookies_from whitespace only with fallback", YouTubeMusicConfig{CookiesFrom: "   \t\n"}, hasFallback, true},
 		{"cookies_from with disabled", YouTubeMusicConfig{Disabled: true, CookiesFrom: "chrome"}, nil, false},
@@ -659,6 +662,57 @@ cookies_from = "   "
 	}
 	if cfg.YouTubeMusic.CookiesFrom != "" {
 		t.Errorf("YouTubeMusic.CookiesFrom = %q, want empty string", cfg.YouTubeMusic.CookiesFrom)
+	}
+}
+
+func TestLoadCookiesFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir on Windows
+
+	path := filepath.Join(os.Getenv("HOME"), ".config", "cliamp", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	data := []byte(`
+[ytmusic]
+cookies_from = "chrome"
+cookies_file = " /home/u/yt.txt "
+
+[soundcloud]
+enabled = true
+cookies_file = "~/sc.txt"
+
+[mixcloud]
+enabled = true
+cookies_file = "/home/u/mc.txt"
+
+[netease]
+enabled = true
+cookies_file = "/home/u/ne.txt"
+`)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	tests := []struct {
+		section string
+		got     ytdlcookies.Source
+		want    ytdlcookies.Source
+	}{
+		{"ytmusic", cfg.YouTubeMusic.CookieSource(), ytdlcookies.Source{Browser: "chrome", File: "/home/u/yt.txt"}},
+		{"soundcloud", cfg.SoundCloud.CookieSource(), ytdlcookies.Source{File: filepath.Join(home, "sc.txt")}},
+		{"mixcloud", cfg.Mixcloud.CookieSource(), ytdlcookies.Source{File: "/home/u/mc.txt"}},
+		{"netease", cfg.NetEase.CookieSource(), ytdlcookies.Source{File: "/home/u/ne.txt"}},
+	}
+	for _, tc := range tests {
+		if tc.got != tc.want {
+			t.Errorf("[%s] CookieSource() = %+v, want %+v", tc.section, tc.got, tc.want)
+		}
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 
 	"github.com/bjarneo/cliamp/internal/appdir"
 	"github.com/bjarneo/cliamp/internal/fileutil"
+	"github.com/bjarneo/cliamp/internal/ytdlcookies"
 )
 
 // maxVisRows caps the configurable visualizer height. The layout shrinks the
@@ -173,7 +174,25 @@ type YouTubeMusicConfig struct {
 	ClientID       string // Google Cloud OAuth2 client ID (overrides built-in fallback)
 	ClientSecret   string // Google Cloud OAuth2 client secret (overrides built-in fallback)
 	CookiesFrom    string // browser name for yt-dlp --cookies-from-browser (e.g. "chrome", "firefox")
+	CookiesFile    string // path to a Netscape cookies.txt for yt-dlp --cookies
 	ExpandPlaylist *bool  // nil = default (true), controls whether list= URLs expand the full playlist
+}
+
+// cookieSource builds a yt-dlp cookie source from the two config keys,
+// ignoring whitespace-only values so a blank key reads as unset. A leading ~
+// in the file path is expanded, as yt-dlp itself does for browser profile
+// paths. Precedence between the two is ytdlcookies.Source's concern (the file
+// wins).
+func cookieSource(browser, file string) ytdlcookies.Source {
+	return ytdlcookies.Source{
+		Browser: strings.TrimSpace(browser),
+		File:    fileutil.ExpandHome(strings.TrimSpace(file)),
+	}
+}
+
+// CookieSource returns the yt-dlp cookie source configured for YouTube.
+func (y YouTubeMusicConfig) CookieSource() ytdlcookies.Source {
+	return cookieSource(y.CookiesFrom, y.CookiesFile)
 }
 
 // IsSetOrFallback returns true when YouTube providers should be enabled,
@@ -182,7 +201,7 @@ func (y YouTubeMusicConfig) IsSetOrFallback(fallbackFn func() (string, string)) 
 	if y.Disabled {
 		return false
 	}
-	if y.Enabled || strings.TrimSpace(y.CookiesFrom) != "" {
+	if y.Enabled || !y.CookieSource().IsZero() {
 		return true
 	}
 	// Even without a config section, enable if fallback credentials exist.
@@ -227,12 +246,18 @@ type PodcastConfig struct {
 // SoundCloudConfig holds settings for the SoundCloud provider.
 // SoundCloud is opt-in: requires enabled = true in [soundcloud] before the
 // provider registers. Setting User exposes that profile's Tracks/Likes/Reposts
-// in the browse view. Setting CookiesFrom (browser name) lets yt-dlp use the
-// user's signed-in session for subscriber-gated tracks.
+// in the browse view. Setting CookiesFrom (browser name) or CookiesFile lets
+// yt-dlp use the user's signed-in session for subscriber-gated tracks.
 type SoundCloudConfig struct {
 	Enabled     bool   // true only when user explicitly sets enabled = true
 	User        string // SoundCloud username for browse (optional)
 	CookiesFrom string // browser name for yt-dlp --cookies-from-browser (optional)
+	CookiesFile string // path to a Netscape cookies.txt for yt-dlp --cookies
+}
+
+// CookieSource returns the yt-dlp cookie source configured for SoundCloud.
+func (s SoundCloudConfig) CookieSource() ytdlcookies.Source {
+	return cookieSource(s.CookiesFrom, s.CookiesFile)
 }
 
 // IsSet reports whether the SoundCloud provider should be shown.
@@ -240,13 +265,14 @@ func (s SoundCloudConfig) IsSet() bool { return s.Enabled }
 
 // MixcloudConfig holds settings for the Mixcloud provider. Public discovery
 // works with only enabled=true. Username adds public account views; an access
-// token adds /me and Listen Later; browser cookies are used only by yt-dlp for
-// playback that needs the listener's signed-in Mixcloud session.
+// token adds /me and Listen Later; cookies (browser or file) are used only by
+// yt-dlp for playback that needs the listener's signed-in Mixcloud session.
 type MixcloudConfig struct {
 	Enabled        bool
 	Username       string
 	AccessToken    string
 	CookiesFrom    string
+	CookiesFile    string
 	Styles         []string
 	StylesSet      bool // distinguishes omitted styles (defaults) from an explicit empty list
 	MaxItems       int
@@ -256,17 +282,28 @@ type MixcloudConfig struct {
 // IsSet reports whether the Mixcloud provider should be shown.
 func (m MixcloudConfig) IsSet() bool { return m.Enabled }
 
+// CookieSource returns the yt-dlp cookie source configured for Mixcloud.
+func (m MixcloudConfig) CookieSource() ytdlcookies.Source {
+	return cookieSource(m.CookiesFrom, m.CookiesFile)
+}
+
 // NetEaseConfig holds settings for the NetEase Cloud Music provider.
 // The provider is opt-in and can reuse an existing browser session through
-// yt-dlp's --cookies-from-browser support.
+// yt-dlp's --cookies-from-browser support, or a Netscape cookies.txt.
 type NetEaseConfig struct {
 	Enabled     bool   // true only when user explicitly sets enabled = true
 	CookiesFrom string // browser name for account APIs and playback (e.g. "chrome")
+	CookiesFile string // path to a Netscape cookies.txt
 	UserID      string // optional account user id; setup can discover this from cookies
 }
 
 // IsSet reports whether the NetEase provider should be shown.
 func (n NetEaseConfig) IsSet() bool { return n.Enabled }
+
+// CookieSource returns the cookie source configured for NetEase.
+func (n NetEaseConfig) CookieSource() ytdlcookies.Source {
+	return cookieSource(n.CookiesFrom, n.CookiesFile)
+}
 
 // YandexConfig holds settings for the Yandex Music provider.
 // The provider is opt-in and authenticates with a personal OAuth token
@@ -550,6 +587,8 @@ func Load() (Config, error) {
 				cfg.YouTubeMusic.ClientSecret = parseString(val)
 			case "cookies_from":
 				cfg.YouTubeMusic.CookiesFrom = strings.TrimSpace(parseString(val))
+			case "cookies_file":
+				cfg.YouTubeMusic.CookiesFile = strings.TrimSpace(parseString(val))
 			case "expand_playlist":
 				v := strings.ToLower(val) != "false"
 				cfg.YouTubeMusic.ExpandPlaylist = &v
@@ -580,6 +619,8 @@ func Load() (Config, error) {
 				cfg.SoundCloud.User = parseString(val)
 			case "cookies_from":
 				cfg.SoundCloud.CookiesFrom = strings.TrimSpace(parseString(val))
+			case "cookies_file":
+				cfg.SoundCloud.CookiesFile = strings.TrimSpace(parseString(val))
 			}
 		case "mixcloud":
 			switch key {
@@ -591,6 +632,8 @@ func Load() (Config, error) {
 				cfg.Mixcloud.AccessToken = strings.TrimSpace(parseString(val))
 			case "cookies_from":
 				cfg.Mixcloud.CookiesFrom = strings.TrimSpace(parseString(val))
+			case "cookies_file":
+				cfg.Mixcloud.CookiesFile = strings.TrimSpace(parseString(val))
 			case "styles":
 				cfg.Mixcloud.Styles = parseStringSlice(val)
 				cfg.Mixcloud.StylesSet = true
@@ -609,6 +652,8 @@ func Load() (Config, error) {
 				cfg.NetEase.Enabled = strings.ToLower(val) == "true"
 			case "cookies_from":
 				cfg.NetEase.CookiesFrom = strings.TrimSpace(parseString(val))
+			case "cookies_file":
+				cfg.NetEase.CookiesFile = strings.TrimSpace(parseString(val))
 			case "user_id":
 				cfg.NetEase.UserID = parseString(val)
 			}

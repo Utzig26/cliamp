@@ -36,6 +36,7 @@ import (
 	"github.com/bjarneo/cliamp/internal/appmeta"
 	"github.com/bjarneo/cliamp/internal/playback"
 	"github.com/bjarneo/cliamp/internal/resume"
+	"github.com/bjarneo/cliamp/internal/ytdlcookies"
 	"github.com/bjarneo/cliamp/ipc"
 	"github.com/bjarneo/cliamp/luaplugin"
 	"github.com/bjarneo/cliamp/mediactl"
@@ -102,6 +103,9 @@ func restoreJellyfinContext(state resume.State, prov *jellyfin.Provider) ([]play
 }
 
 func run(overrides config.Overrides, positional []string, daemon, visualizer60FPS bool) error {
+	// Runs last: removes the session directory of private cookie copies,
+	// including any copy whose yt-dlp process has not reported its exit.
+	defer ytdlcookies.Shutdown()
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
@@ -189,9 +193,9 @@ func run(overrides config.Overrides, positional []string, daemon, visualizer60FP
 	}
 
 	if scProv := soundcloud.NewFromConfig(soundcloud.Config{
-		Enabled:     cfg.SoundCloud.Enabled,
-		User:        cfg.SoundCloud.User,
-		CookiesFrom: cfg.SoundCloud.CookiesFrom,
+		Enabled: cfg.SoundCloud.Enabled,
+		User:    cfg.SoundCloud.User,
+		Cookies: cfg.SoundCloud.CookieSource(),
 	}); scProv != nil {
 		providers = append(providers, model.ProviderEntry{Key: "soundcloud", Name: "SoundCloud", Provider: scProv})
 	}
@@ -200,7 +204,7 @@ func run(overrides config.Overrides, positional []string, daemon, visualizer60FP
 		Enabled:        cfg.Mixcloud.Enabled,
 		Username:       cfg.Mixcloud.Username,
 		AccessToken:    cfg.Mixcloud.AccessToken,
-		CookiesFrom:    cfg.Mixcloud.CookiesFrom,
+		Cookies:        cfg.Mixcloud.CookieSource(),
 		Styles:         cfg.Mixcloud.Styles,
 		StylesSet:      cfg.Mixcloud.StylesSet,
 		MaxItems:       cfg.Mixcloud.MaxItems,
@@ -211,9 +215,9 @@ func run(overrides config.Overrides, positional []string, daemon, visualizer60FP
 	}
 
 	if neProv := netease.NewFromConfig(netease.Config{
-		Enabled:     cfg.NetEase.Enabled,
-		CookiesFrom: cfg.NetEase.CookiesFrom,
-		UserID:      cfg.NetEase.UserID,
+		Enabled: cfg.NetEase.Enabled,
+		Cookies: cfg.NetEase.CookieSource(),
+		UserID:  cfg.NetEase.UserID,
 	}); neProv != nil {
 		providers = append(providers, model.ProviderEntry{Key: "netease", Name: "NetEase", Provider: neProv})
 	}
@@ -236,10 +240,11 @@ func run(overrides config.Overrides, positional []string, daemon, visualizer60FP
 	}
 	if ytWanted {
 		explicitOAuth := strings.TrimSpace(cfg.YouTubeMusic.ClientID) != "" && strings.TrimSpace(cfg.YouTubeMusic.ClientSecret) != ""
-		hasCookies := strings.TrimSpace(cfg.YouTubeMusic.CookiesFrom) != ""
+		ytCookies := cfg.YouTubeMusic.CookieSource()
+		hasCookies := !ytCookies.IsZero()
 		if hasCookies {
 			for _, host := range []string{"youtube.com", "youtu.be", "music.youtube.com"} {
-				resolve.SetYTDLCookiesForHost(host, cfg.YouTubeMusic.CookiesFrom)
+				ytdlcookies.SetForHost(host, ytCookies)
 			}
 		}
 
@@ -247,7 +252,7 @@ func run(overrides config.Overrides, positional []string, daemon, visualizer60FP
 		hasFallbackOAuth := !explicitOAuth && ytClientID != "" && ytClientSecret != ""
 
 		if !explicitOAuth && !hasCookies && !hasFallbackOAuth {
-			fmt.Fprintf(os.Stderr, "YouTube: no credentials available (configure client_id/client_secret or cookies_from in config.toml)\n")
+			fmt.Fprintf(os.Stderr, "YouTube: no credentials available (configure client_id/client_secret, cookies_from, or cookies_file in config.toml)\n")
 		} else {
 			if !player.YTDLPAvailable() {
 				fmt.Fprintf(os.Stderr, "\nYouTube requires yt-dlp for audio playback.\n")
@@ -269,7 +274,7 @@ func run(overrides config.Overrides, positional []string, daemon, visualizer60FP
 					all, video, music = oauthProviders.All, oauthProviders.Video, oauthProviders.Music
 					closeYouTube = oauthProviders.Music.Close
 				} else if hasCookies {
-					cookieProviders := ytmusic.NewCookieProviders(cfg.YouTubeMusic.CookiesFrom)
+					cookieProviders := ytmusic.NewCookieProviders(ytCookies)
 					all, video, music = cookieProviders.All, cookieProviders.Video, cookieProviders.Music
 					closeYouTube = cookieProviders.Music.Close
 				} else if hasFallbackOAuth {

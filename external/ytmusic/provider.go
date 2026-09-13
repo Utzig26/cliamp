@@ -30,7 +30,7 @@ type baseProvider struct {
 	session      *Session
 	clientID     string
 	clientSecret string
-	hasCookies   bool // true when cookies_from is configured
+	hasCookies   bool // true when a cookie source (cookies_from or cookies_file) is configured
 	mu           sync.Mutex
 	trackCache   map[string][]playlist.Track // playlist ID -> cached tracks
 	allPlaylists []playlistEntry             // cached raw playlist list

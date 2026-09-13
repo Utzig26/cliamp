@@ -326,6 +326,7 @@ func TestNavBufferTempfileInitializationErrorCancelsRequest(t *testing.T) {
 	t.Setenv("TMPDIR", missingTempDir)
 	t.Setenv("TMP", missingTempDir)
 	t.Setenv("TEMP", missingTempDir)
+	resetCookieDir(t)
 
 	requestCanceled := make(chan struct{})
 	stop := make(chan struct{})

@@ -14,9 +14,9 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/bjarneo/cliamp/internal/ytdlcookies"
 	"github.com/bjarneo/cliamp/playlist"
 	"github.com/bjarneo/cliamp/provider"
-	"github.com/bjarneo/cliamp/resolve"
 )
 
 const (
@@ -76,7 +76,7 @@ type Config struct {
 	Enabled        bool
 	Username       string
 	AccessToken    string
-	CookiesFrom    string
+	Cookies        ytdlcookies.Source // signed-in session for yt-dlp playback
 	Styles         []string
 	StylesSet      bool
 	MaxItems       int
@@ -107,7 +107,7 @@ func NewFromConfig(cfg Config) *Provider {
 	if !cfg.Enabled {
 		return nil
 	}
-	resolve.SetYTDLCookiesForHost("mixcloud.com", cfg.CookiesFrom)
+	ytdlcookies.SetForHost("mixcloud.com", cfg.Cookies)
 	maxItems := cfg.MaxItems
 	if maxItems <= 0 {
 		maxItems = DefaultMaxItems

@@ -12,13 +12,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bjarneo/cliamp/internal/ytdlcookies"
 	"github.com/bjarneo/cliamp/playlist"
 	"github.com/bjarneo/cliamp/provider"
 	"github.com/bjarneo/cliamp/resolve"
 )
 
 func TestCookieProviderInterfaces(t *testing.T) {
-	provs := NewCookieProviders("chrome")
+	provs := NewCookieProviders(ytdlcookies.Source{Browser: "chrome"})
 	var _ playlist.Provider = provs.Music
 	var _ playlist.Provider = provs.Video
 	var _ playlist.Provider = provs.All
@@ -34,7 +35,7 @@ func TestCookieProviderInterfaces(t *testing.T) {
 }
 
 func TestCookieProviderNames(t *testing.T) {
-	provs := NewCookieProviders("chrome")
+	provs := NewCookieProviders(ytdlcookies.Source{Browser: "chrome"})
 	if got := provs.Music.Name(); got != "YouTube Music" {
 		t.Errorf("Music.Name() = %q, want %q", got, "YouTube Music")
 	}
@@ -56,11 +57,11 @@ func TestCookieProviderPlaylists(t *testing.T) {
 	}
 	fetchCount := 0
 	base := &cookieBase{
-		browser: "firefox",
-		fetchFn: func(browser string) ([]playlist.PlaylistInfo, error) {
+		cookies: ytdlcookies.Source{Browser: "firefox"},
+		fetchFn: func(_ context.Context, cookies ytdlcookies.Source) ([]playlist.PlaylistInfo, error) {
 			fetchCount++
-			if browser != "firefox" {
-				t.Errorf("expected browser firefox, got %q", browser)
+			if cookies.Browser != "firefox" {
+				t.Errorf("expected browser firefox, got %+v", cookies)
 			}
 			return mockPlaylists, nil
 		},
@@ -125,8 +126,8 @@ func TestCookieProviderPlaylists_NilCaching(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	fetchCount := 0
 	base := &cookieBase{
-		browser: "chrome",
-		fetchFn: func(browser string) ([]playlist.PlaylistInfo, error) {
+		cookies: ytdlcookies.Source{Browser: "chrome"},
+		fetchFn: func(context.Context, ytdlcookies.Source) ([]playlist.PlaylistInfo, error) {
 			fetchCount++
 			return nil, nil
 		},
@@ -154,8 +155,8 @@ func TestCookieProviderPlaylists_NilCaching(t *testing.T) {
 func TestCookieProviderPlaylists_Error(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	base := &cookieBase{
-		browser: "chrome",
-		fetchFn: func(browser string) ([]playlist.PlaylistInfo, error) {
+		cookies: ytdlcookies.Source{Browser: "chrome"},
+		fetchFn: func(context.Context, ytdlcookies.Source) ([]playlist.PlaylistInfo, error) {
 			return nil, errors.New("yt-dlp failed")
 		},
 	}
@@ -194,7 +195,7 @@ func TestFormatPlaylistURL(t *testing.T) {
 }
 
 func TestCookieProviderSearchTracks_Empty(t *testing.T) {
-	prov := NewCookieProvider("chrome", KindMusic)
+	prov := NewCookieProvider(ytdlcookies.Source{Browser: "chrome"}, KindMusic)
 	tracks, err := prov.SearchTracks(context.Background(), "", 10)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -205,7 +206,7 @@ func TestCookieProviderSearchTracks_Empty(t *testing.T) {
 }
 
 func TestCookieProviderTracks_EmptyID(t *testing.T) {
-	prov := NewCookieProvider("chrome", KindMusic)
+	prov := NewCookieProvider(ytdlcookies.Source{Browser: "chrome"}, KindMusic)
 	_, err := prov.Tracks("")
 	if err == nil {
 		t.Fatal("expected error for empty playlist id, got nil")
@@ -214,7 +215,7 @@ func TestCookieProviderTracks_EmptyID(t *testing.T) {
 
 func TestCookieProviderTracksCaching(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	base := newCookieBase("chrome")
+	base := newCookieBase(ytdlcookies.Source{Browser: "chrome"})
 
 	mockTracks := []playlist.Track{
 		{Path: "https://music.youtube.com/watch?v=123", Title: "Song 1", Artist: "Artist 1", DurationSecs: 200},
@@ -254,15 +255,15 @@ func TestCookieProviderTracksCaching(t *testing.T) {
 
 func TestCookieProviderTracksLoadsInBatches(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	base := newCookieBase("firefox")
+	base := newCookieBase(ytdlcookies.Source{Browser: "firefox"})
 	var starts []int
-	base.resolveFn = func(_ context.Context, _ string, start, count int, browser ...string) ([]playlist.Track, int, error) {
+	base.resolveFn = func(_ context.Context, _ string, start, count int, cookies ytdlcookies.Source) ([]playlist.Track, int, error) {
 		starts = append(starts, start)
 		if count != cookiePlaylistBatchSize {
 			t.Fatalf("count = %d, want %d", count, cookiePlaylistBatchSize)
 		}
-		if len(browser) != 1 || browser[0] != "firefox" {
-			t.Fatalf("browser = %v, want firefox", browser)
+		if cookies.Browser != "firefox" {
+			t.Fatalf("cookies = %+v, want firefox", cookies)
 		}
 		n := cookiePlaylistBatchSize
 		if start > 0 {
@@ -307,9 +308,9 @@ func TestCookieProviderStopsTrackLoad(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			base := newCookieBase("firefox")
+			base := newCookieBase(ytdlcookies.Source{Browser: "firefox"})
 			started := make(chan struct{})
-			base.resolveFn = func(ctx context.Context, _ string, _, _ int, _ ...string) ([]playlist.Track, int, error) {
+			base.resolveFn = func(ctx context.Context, _ string, _, _ int, _ ytdlcookies.Source) ([]playlist.Track, int, error) {
 				close(started)
 				<-ctx.Done()
 				return nil, 0, ctx.Err()
@@ -337,10 +338,10 @@ func TestCookieProviderStopsTrackLoad(t *testing.T) {
 
 func TestCookieProviderRefreshRejectsStaleResults(t *testing.T) {
 	t.Run("playlists", func(t *testing.T) {
-		base := newCookieBase("firefox")
+		base := newCookieBase(ytdlcookies.Source{Browser: "firefox"})
 		started := make(chan struct{})
 		release := make(chan struct{})
-		base.fetchFn = func(string) ([]playlist.PlaylistInfo, error) {
+		base.fetchFn = func(context.Context, ytdlcookies.Source) ([]playlist.PlaylistInfo, error) {
 			close(started)
 			<-release
 			return []playlist.PlaylistInfo{{ID: "private"}}, nil
@@ -363,10 +364,10 @@ func TestCookieProviderRefreshRejectsStaleResults(t *testing.T) {
 	})
 
 	t.Run("tracks", func(t *testing.T) {
-		base := newCookieBase("firefox")
+		base := newCookieBase(ytdlcookies.Source{Browser: "firefox"})
 		started := make(chan struct{})
 		release := make(chan struct{})
-		base.resolveFn = func(context.Context, string, int, int, ...string) ([]playlist.Track, int, error) {
+		base.resolveFn = func(context.Context, string, int, int, ytdlcookies.Source) ([]playlist.Track, int, error) {
 			close(started)
 			<-release
 			return []playlist.Track{{Title: "Private"}}, 1, nil
@@ -402,7 +403,7 @@ func TestCookieProviderSearchTracksHonorsCancellation(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := NewCookieProvider("chrome", KindMusic).SearchTracks(ctx, "query", 10)
+	_, err := NewCookieProvider(ytdlcookies.Source{Browser: "chrome"}, KindMusic).SearchTracks(ctx, "query", 10)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("SearchTracks() error = %v, want context.Canceled", err)
 	}
@@ -412,7 +413,7 @@ func TestNewCookieProvidersDoesNotMutateOtherHostCookies(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("skipping Unix shell script test on Windows")
 	}
-	t.Cleanup(func() { resolve.SetYTDLCookiesForHost("soundcloud.com", "") })
+	t.Cleanup(func() { ytdlcookies.SetForHost("soundcloud.com", ytdlcookies.Source{}) })
 
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "ytdlp_args.log")
@@ -426,13 +427,13 @@ func TestNewCookieProvidersDoesNotMutateOtherHostCookies(t *testing.T) {
 	t.Setenv("PATH", tmpDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	// Configure a cookie source for another provider.
-	resolve.SetYTDLCookiesForHost("soundcloud.com", "firefox")
+	ytdlcookies.SetForHost("soundcloud.com", ytdlcookies.Source{Browser: "firefox"})
 
 	// Initializing YouTube Music cookie providers must not affect SoundCloud.
-	_ = NewCookieProviders("chrome")
-	_ = NewCookieProvider("chrome", KindMusic)
+	_ = NewCookieProviders(ytdlcookies.Source{Browser: "chrome"})
+	_ = NewCookieProvider(ytdlcookies.Source{Browser: "chrome"}, KindMusic)
 
-	_, _ = resolve.ResolveYTDLBatch("https://soundcloud.com/user/tracks", 0, 0)
+	_, _ = resolve.ResolveYTDLBatch("https://soundcloud.com/user/tracks", 0, 0, ytdlcookies.Source{})
 	logged, err := os.ReadFile(logFile)
 	if err != nil {
 		t.Fatal(err)

@@ -10,9 +10,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/bjarneo/cliamp/internal/ytdlcookies"
 	"github.com/gopxl/beep/v2"
 )
 
@@ -76,6 +78,32 @@ func fixtureLineCount(t *testing.T, path string) int {
 		t.Fatalf("read fixture output: %v", err)
 	}
 	return len(strings.Fields(string(b)))
+}
+
+// A pipeline built with a cookies_file source must not leave its private jar
+// copy behind once Close returns, even if the process exits right after.
+func TestYTDLPipeCookieCopyRemovedOnClose(t *testing.T) {
+	installYTDLRetryFixtures(t, "ok")
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp) // parent of the session directory holding private copies
+	resetCookieDir(t)
+	cookieFile := filepath.Join(t.TempDir(), "cookies.txt")
+	if err := os.WriteFile(cookieFile, []byte("# Netscape HTTP Cookie File\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ytdlcookies.SetForHost("cookies.example", ytdlcookies.Source{File: cookieFile})
+	t.Cleanup(func() { ytdlcookies.SetForHost("cookies.example", ytdlcookies.Source{}) })
+
+	decoder, _, err := decodeYTDLPipe("https://cookies.example/track", beep.SampleRate(44100), 16, 0)
+	if err != nil {
+		t.Fatalf("decodeYTDLPipe() error = %v", err)
+	}
+	if err := decoder.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if left := cookieCopies(t, tmp); len(left) != 0 {
+		t.Fatalf("cookie copies left after Close: %v", left)
+	}
 }
 
 func TestBuildYTDLPipelineRetriesTransient403(t *testing.T) {
@@ -193,6 +221,51 @@ func TestWaitCauseReturnsBeforeDeadline(t *testing.T) {
 	}
 }
 
+// The private cookie jar must be gone by the time Close returns: the player
+// is closed from a defer in main, so anything left to a goroutine can be
+// skipped by process exit.
+func TestYTDLPipeCloseRemovesCookieCopyBeforeReturning(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses POSIX process fixture")
+	}
+	ytdlCmd := exec.Command("sleep", "30")
+	ffmpegCmd := exec.Command("sleep", "30")
+	var ytdlStderr, ffmpegStderr limitedBuffer
+	if err := ytdlCmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if err := ffmpegCmd.Start(); err != nil {
+		_ = ytdlCmd.Process.Kill()
+		_ = ytdlCmd.Wait()
+		t.Fatal(err)
+	}
+	var cleanedAfterExit atomic.Bool
+	ytdlErr, ytdlDone := monitorExit(ytdlCmd, &ytdlStderr, "yt-dlp", func() {
+		if ytdlCmd.ProcessState == nil {
+			t.Error("cookie cleanup ran before yt-dlp was reaped")
+		} else {
+			cleanedAfterExit.Store(true)
+		}
+	})
+	ffmpegErr, ffmpegDone := monitorExit(ffmpegCmd, &ffmpegStderr, "ffmpeg", nil)
+
+	y := &ytdlPipeStreamer{
+		ytdlCmd:    ytdlCmd,
+		ffmpegCmd:  ffmpegCmd,
+		pipe:       io.NopCloser(bytes.NewReader(nil)),
+		ytdlErr:    ytdlErr,
+		ffmpegErr:  ffmpegErr,
+		ytdlDone:   ytdlDone,
+		ffmpegDone: ffmpegDone,
+	}
+	if err := y.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if !cleanedAfterExit.Load() {
+		t.Fatal("cookie cleanup had not run when Close returned")
+	}
+}
+
 func TestYTDLPipeCloseReapsBothProcesses(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("uses POSIX process fixture")
@@ -208,8 +281,8 @@ func TestYTDLPipeCloseReapsBothProcesses(t *testing.T) {
 		_ = ytdlCmd.Wait()
 		t.Fatal(err)
 	}
-	ytdlErr, ytdlDone := monitorExit(ytdlCmd, &ytdlStderr, "yt-dlp")
-	ffmpegErr, ffmpegDone := monitorExit(ffmpegCmd, &ffmpegStderr, "ffmpeg")
+	ytdlErr, ytdlDone := monitorExit(ytdlCmd, &ytdlStderr, "yt-dlp", nil)
+	ffmpegErr, ffmpegDone := monitorExit(ffmpegCmd, &ffmpegStderr, "ffmpeg", nil)
 	y := &ytdlPipeStreamer{
 		ytdlCmd:    ytdlCmd,
 		ffmpegCmd:  ffmpegCmd,

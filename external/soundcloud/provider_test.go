@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/bjarneo/cliamp/internal/ytdlcookies"
-	"github.com/bjarneo/cliamp/resolve"
 )
 
 func TestNewFromConfig(t *testing.T) {
@@ -134,10 +133,10 @@ func TestConfigIsSet(t *testing.T) {
 }
 
 func TestNewFromConfigPropagatesCookies(t *testing.T) {
-	t.Cleanup(func() { resolve.SetYTDLCookiesForHost("soundcloud.com", "") })
+	t.Cleanup(func() { ytdlcookies.SetForHost("soundcloud.com", ytdlcookies.Source{}) })
 
-	NewFromConfig(Config{Enabled: true, CookiesFrom: "firefox"})
-	if got := ytdlcookies.ForURL("https://soundcloud.com/user/tracks"); got != "firefox" {
+	NewFromConfig(Config{Enabled: true, Cookies: ytdlcookies.Source{Browser: "firefox"}})
+	if got := ytdlcookies.ForURL("https://soundcloud.com/user/tracks").Browser; got != "firefox" {
 		t.Errorf("SoundCloud cookie source = %q, want firefox", got)
 	}
 }

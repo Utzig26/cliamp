@@ -17,9 +17,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bjarneo/cliamp/internal/ytdlcookies"
 	"github.com/bjarneo/cliamp/playlist"
 	"github.com/bjarneo/cliamp/provider"
-	"github.com/bjarneo/cliamp/resolve"
 )
 
 var (
@@ -43,9 +43,9 @@ var ErrNotAuthenticated = errors.New("netease: browser session is not signed in"
 
 // Config holds settings for the NetEase provider.
 type Config struct {
-	Enabled     bool
-	CookiesFrom string
-	UserID      string
+	Enabled bool
+	Cookies ytdlcookies.Source // signed-in session: a browser profile (via yt-dlp) or a cookies.txt read directly
+	UserID  string
 }
 
 // IsSet reports whether the provider should be exposed.
@@ -72,10 +72,10 @@ var charts = []chartPlaylist{
 
 // Provider implements playlist.Provider and provider.Searcher.
 type Provider struct {
-	apiBase     string
-	httpClient  *http.Client
-	cookiesFrom string
-	userID      string
+	apiBase    string
+	httpClient *http.Client
+	cookies    ytdlcookies.Source
+	userID     string
 
 	mu           sync.Mutex
 	cookieHeader string
@@ -85,23 +85,22 @@ type Provider struct {
 
 // NewFromConfig returns a provider, or nil when NetEase is not enabled.
 // Registers NetEase's yt-dlp cookie source so resolution and playback use the
-// same signed-in browser session without affecting other providers.
+// same signed-in session without affecting other providers.
 func NewFromConfig(cfg Config) *Provider {
 	if !cfg.Enabled {
 		return nil
 	}
-	cfg.CookiesFrom = strings.TrimSpace(cfg.CookiesFrom)
-	resolve.SetYTDLCookiesForHost("music.163.com", cfg.CookiesFrom)
+	ytdlcookies.SetForHost("music.163.com", cfg.Cookies)
 	return New(cfg)
 }
 
 // New creates a NetEase provider.
 func New(cfg Config) *Provider {
 	return &Provider{
-		apiBase:     defaultAPIBase,
-		httpClient:  &http.Client{Timeout: apiTimeout},
-		cookiesFrom: strings.TrimSpace(cfg.CookiesFrom),
-		userID:      strings.TrimSpace(cfg.UserID),
+		apiBase:    defaultAPIBase,
+		httpClient: &http.Client{Timeout: apiTimeout},
+		cookies:    cfg.Cookies,
+		userID:     strings.TrimSpace(cfg.UserID),
 	}
 }
 
@@ -124,7 +123,7 @@ func (p *Provider) Refresh() {
 
 // CheckLogin verifies that the given browser has a signed-in NetEase account.
 func CheckLogin(ctx context.Context, browser string) (Account, error) {
-	p := New(Config{Enabled: true, CookiesFrom: browser})
+	p := New(Config{Enabled: true, Cookies: ytdlcookies.Source{Browser: browser}})
 	return p.Account(ctx)
 }
 
@@ -182,7 +181,7 @@ func (p *Provider) Playlists() ([]playlist.PlaylistInfo, error) {
 	defer cancel()
 
 	var infos []playlist.PlaylistInfo
-	if userID == "" && p.cookiesFrom != "" {
+	if userID == "" && !p.cookies.IsZero() {
 		acc, err := p.Account(ctx)
 		if err != nil {
 			return nil, err
@@ -412,7 +411,7 @@ func (p *Provider) apiGet(ctx context.Context, path string, params url.Values, o
 }
 
 func (p *Provider) ensureCookieHeader(ctx context.Context) (string, error) {
-	if p.cookiesFrom == "" {
+	if p.cookies.IsZero() {
 		return "", nil
 	}
 	p.mu.Lock()
@@ -423,9 +422,22 @@ func (p *Provider) ensureCookieHeader(ctx context.Context) (string, error) {
 	}
 	p.mu.Unlock()
 
-	header, err := extractBrowserCookieHeader(ctx, p.cookiesFrom)
-	if err != nil {
+	var (
+		header string
+		err    error
+		where  = "browser session"
+	)
+	if p.cookies.File != "" {
+		where = p.cookies.File
+		header, err = cookieHeaderFromNetscapeFile(p.cookies.File)
+		if err != nil {
+			return "", fmt.Errorf("netease: read cookies file: %w", err)
+		}
+	} else if header, err = extractBrowserCookieHeader(ctx, p.cookies.Browser); err != nil {
 		return "", err
+	}
+	if header == "" {
+		return "", fmt.Errorf("netease: no NetEase cookies found in %s", where)
 	}
 	p.mu.Lock()
 	p.cookieHeader = header
@@ -467,14 +479,7 @@ func extractBrowserCookieHeader(ctx context.Context, browser string) (string, er
 		}
 		return "", fmt.Errorf("netease: load browser cookies: %w", err)
 	}
-	header, err := cookieHeaderFromNetscapeFile(path)
-	if err != nil {
-		return "", err
-	}
-	if header == "" {
-		return "", fmt.Errorf("netease: no NetEase cookies found in browser session")
-	}
-	return header, nil
+	return cookieHeaderFromNetscapeFile(path)
 }
 
 func ytDLPInstallHint() string {

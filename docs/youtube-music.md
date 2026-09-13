@@ -7,7 +7,7 @@ Cliamp automatically sorts playlists into two providers:
 - **YouTube**: Playlists with non-music content, such as podcasts, vlogs, and tutorials.
 
 > **Quick start:**
-> - **Cookie-based (zero OAuth):** Set `cookies_from = "your_browser"` in `~/.config/cliamp/config.toml`, or select a browser in `cliamp setup`. cliamp loads playlists through the existing browser session. You do not need OAuth credentials or `ytmusic_credentials.json`.
+> - **Cookie-based (zero OAuth):** Set `cookies_from = "your_browser"` (or `cookies_file = "/path/to/cookies.txt"`) in `~/.config/cliamp/config.toml`, or select a browser in `cliamp setup`. cliamp loads playlists through the existing browser session. You do not need OAuth credentials or `ytmusic_credentials.json`.
 > - **OAuth-based:** Set Google Cloud OAuth credentials as described below. Then press Enter in the provider browser to sign in. cliamp stores credentials in `~/.config/cliamp/ytmusic_credentials.json`.
 
 ## Setup
@@ -29,6 +29,20 @@ You can set a specific profile or path with yt-dlp `browser:path` syntax. For ex
 [ytmusic]
 cookies_from = "firefox:~/.config/zen"
 ```
+
+On a machine without a browser (a server, a container, or SSH), use a cookies
+file instead. Export one with a browser extension such as "Get cookies.txt
+LOCALLY", or with `yt-dlp --cookies-from-browser chrome --cookies cookies.txt
+--skip-download <url>` on a machine that has the browser:
+
+```toml
+[ytmusic]
+cookies_file = "/home/you/.config/cliamp/youtube-cookies.txt"
+```
+
+`cookies_file` takes precedence when both keys are set. A leading `~` is
+expanded; the file is handed to yt-dlp as `--cookies` via a private copy, so
+the export itself is never modified.
 
 ### Option 2: Custom Google Cloud OAuth client
 

@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/bjarneo/cliamp/internal/ytdlcookies"
 	"github.com/bjarneo/cliamp/playlist"
 	"github.com/bjarneo/cliamp/provider"
 	"github.com/bjarneo/cliamp/resolve"
@@ -28,9 +29,9 @@ var (
 
 // Config holds settings for the SoundCloud provider.
 type Config struct {
-	Enabled     bool   // true only when user explicitly sets enabled = true
-	User        string // SoundCloud username (the path segment, e.g. "yourname"). Optional.
-	CookiesFrom string // browser name for yt-dlp --cookies-from-browser (e.g. "firefox"). Optional.
+	Enabled bool               // true only when user explicitly sets enabled = true
+	User    string             // SoundCloud username (the path segment, e.g. "yourname"). Optional.
+	Cookies ytdlcookies.Source // signed-in session for yt-dlp (browser profile or cookies.txt). Optional.
 }
 
 // IsSet reports whether the SoundCloud provider should be exposed.
@@ -64,7 +65,7 @@ func NewFromConfig(cfg Config) *Provider {
 	if !cfg.Enabled {
 		return nil
 	}
-	resolve.SetYTDLCookiesForHost("soundcloud.com", cfg.CookiesFrom)
+	ytdlcookies.SetForHost("soundcloud.com", cfg.Cookies)
 	return &Provider{user: strings.TrimSpace(cfg.User)}
 }
 
@@ -91,7 +92,7 @@ func (p *Provider) Tracks(playlistID string) ([]playlist.Track, error) {
 	if playlistID == "" {
 		return nil, fmt.Errorf("soundcloud: empty playlist id")
 	}
-	return resolve.ResolveYTDLBatch(playlistID, 0, 0)
+	return resolve.ResolveYTDLBatch(playlistID, 0, 0, ytdlcookies.Source{})
 }
 
 // SearchTracks runs `yt-dlp scsearch{limit}:{query}` and returns matched
@@ -104,5 +105,5 @@ func (p *Provider) SearchTracks(_ context.Context, query string, limit int) ([]p
 	if limit <= 0 {
 		limit = 10
 	}
-	return resolve.ResolveYTDLBatch(fmt.Sprintf("scsearch%d:%s", limit, q), 0, 0)
+	return resolve.ResolveYTDLBatch(fmt.Sprintf("scsearch%d:%s", limit, q), 0, 0, ytdlcookies.Source{})
 }

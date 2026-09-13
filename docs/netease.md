@@ -34,6 +34,8 @@ cliamp passes `cookies_from` to `yt-dlp --cookies-from-browser`. Supported names
 
 `user_id` is optional with valid cookies. If you omit it, cliamp gets it from the signed-in account.
 
+Without a browser on the machine, set `cookies_file` to a Netscape-format `cookies.txt` exported from a signed-in browser. cliamp reads the NetEase cookies from it for the account API (no `yt-dlp` needed for that step) and passes it to `yt-dlp --cookies` for playback. `cookies_file` wins when both keys are set.
+
 ## Usage
 
 Start cliamp with NetEase selected:

@@ -289,6 +289,17 @@ Valid values: `radio` (default), `podcast`, `navidrome`, `lyrion`, `spotify`, `p
 
 You can also override this setting on the CLI: `cliamp --provider jellyfin`.
 
+## Cookies for yt-dlp Providers
+
+YouTube Music, SoundCloud, Mixcloud, and NetEase can reuse a signed-in browser session through yt-dlp. Each of those sections accepts the same two keys:
+
+```toml
+cookies_from = "firefox"                         # browser profile, read by yt-dlp --cookies-from-browser
+cookies_file = "/home/you/.config/cliamp/cookies.txt"  # Netscape cookies.txt, passed as yt-dlp --cookies
+```
+
+Use `cookies_file` where no browser is installed, such as a server or a container. Export it with a browser extension such as "Get cookies.txt LOCALLY", or with `yt-dlp --cookies-from-browser firefox --cookies cookies.txt --skip-download <url>` on a machine that has the browser. A leading `~` is expanded. When both keys are set, `cookies_file` wins. cliamp hands each yt-dlp process a private copy, so the exported file is never modified and may be read-only; a file that cannot be read is an error rather than a silent fallback to unauthenticated playback.
+
 ## Podcasts
 
 Podcasts is always registered: no `enabled` setting, API key, account, or setup

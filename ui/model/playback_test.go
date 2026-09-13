@@ -376,6 +376,7 @@ func TestBeginPlaybackPersistsActualTrackAndCompleteContextImmediately(t *testin
 	pl.Add(album[11])
 
 	m.beginPlaybackTrack(album[11])
+	m.commitPlaybackTrack()
 
 	if savedTrack.Title != "Track 12" || savedIndex != 11 || savedPosition != 0 {
 		t.Fatalf("saved playback = track:%q index:%d position:%d", savedTrack.Title, savedIndex, savedPosition)
@@ -826,9 +827,10 @@ func TestBeginPlaybackTrackFetchesEmbeddedLyricsWithoutNetworkMetadata(t *testin
 	m := Model{lyrics: lyricsState{visible: true}}
 	track := playlist.Track{Title: "Local", EmbeddedLyrics: "Line one\nLine two"}
 
-	_, cmd := m.beginPlaybackTrack(track)
+	m.beginPlaybackTrack(track)
+	cmd := m.commitPlaybackTrack()
 	if cmd == nil {
-		t.Fatal("beginPlaybackTrack() command = nil, want embedded lyrics command")
+		t.Fatal("commitPlaybackTrack() command = nil, want embedded lyrics command")
 	}
 	if !m.lyrics.loading {
 		t.Fatal("lyrics.loading = false, want true")

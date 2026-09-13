@@ -311,10 +311,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.plCursor = m.playlist.Index()
 			m.adjustScroll()
-			var gaplessLyricCmd tea.Cmd
-			newTrack, gaplessLyricCmd = m.beginPlaybackTrack(newTrack)
+			newTrack = m.beginPlaybackTrack(newTrack)
 			// The engine already switched to the preloaded source.
-			m.commitPlaybackTrack()
+			gaplessLyricCmd := m.commitPlaybackTrack()
 			if gaplessLyricCmd != nil {
 				cmds = append(cmds, gaplessLyricCmd)
 			}
@@ -740,8 +739,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.gen != m.requests.stream {
 			// A newer request replaced this start; the engine may still have
 			// switched to it before that.
-			m.adoptSupersededStart(msg)
-			return m, nil
+			return m, m.adoptSupersededStart(msg)
 		}
 		// Only the result of the start still requested may settle ownership.
 		if !m.requestedTrackActive || msg.track.Path != m.requestedTrack.Path {
@@ -749,13 +747,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		track := m.requestedTrack
 		m.buffering = false
-		var resumeCmd tea.Cmd
+		var resumeCmd, startedCmd tea.Cmd
 		if msg.err != nil {
 			m.failPlaybackTrack()
 			m.err = msg.err
 			m.status.Errorf(statusTTLLong, "Couldn't play %s — track is gated, restricted, or unavailable.", track.DisplayName())
 		} else {
-			m.commitPlaybackTrack()
+			startedCmd = m.commitPlaybackTrack()
 			m.err = nil
 			m.reconnect.attempts = 0
 			m.reconnect.at = time.Time{}
@@ -763,7 +761,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.nowPlaying(track)
 		}
 		m.notifyAll()
-		return m, tea.Batch(resumeCmd, m.preloadNext())
+		return m, tea.Batch(resumeCmd, startedCmd, m.preloadNext())
 
 	case streamPreloadedMsg:
 		if msg.gen != m.requests.preload {

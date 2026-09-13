@@ -779,8 +779,8 @@ func TestBeginPlaybackTrackRecordsHistoryImmediately(t *testing.T) {
 
 	// Starting a track records it right away: after pressing next, the
 	// current song — not the previous one — tops Recently Played.
-	_, cmd := m.beginPlaybackTrack(playlist.Track{Path: "/now.mp3", Title: "Now"})
-	if cmd == nil {
+	m.beginPlaybackTrack(playlist.Track{Path: "/now.mp3", Title: "Now"})
+	if cmd := m.commitPlaybackTrack(); cmd == nil {
 		t.Fatal("expected a provider-playlist refresh command when history records")
 	}
 	if len(m.plManager.playlists) == 0 {
@@ -831,7 +831,8 @@ func TestMaybeScrobbleReloadsOpenHistoryTracks(t *testing.T) {
 		{Path: "/new2.mp3", Title: "New2"},
 	}
 
-	if _, cmd := m.beginPlaybackTrack(playlist.Track{Path: "/song.mp3", Title: "Song"}); cmd == nil {
+	m.beginPlaybackTrack(playlist.Track{Path: "/song.mp3", Title: "Song"})
+	if cmd := m.commitPlaybackTrack(); cmd == nil {
 		t.Fatal("expected a provider-playlist refresh command when a track starts")
 	}
 	if len(m.plManager.tracks) != 2 || m.plManager.tracks[0].Path != "/new1.mp3" {

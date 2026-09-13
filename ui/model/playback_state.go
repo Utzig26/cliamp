@@ -1,6 +1,10 @@
 package model
 
-import "github.com/bjarneo/cliamp/playlist"
+import (
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/bjarneo/cliamp/playlist"
+)
 
 // currentPlaybackTrack returns the track playback is about: the one a start
 // is buffering for, else the one the engine owns while it plays, else the
@@ -36,13 +40,15 @@ func (m *Model) requestPlaybackTrack(track playlist.Track) {
 	m.playbackDetached = false
 }
 
-// commitPlaybackTrack makes the requested track the engine-owned one.
-func (m *Model) commitPlaybackTrack() {
+// commitPlaybackTrack makes the requested track the engine-owned one and
+// applies the effects of it playing.
+func (m *Model) commitPlaybackTrack() tea.Cmd {
 	m.playingTrack = m.requestedTrack
 	m.playingTrackActive = true
 	m.playingTrackGen = m.requestedTrackGen
 	m.requestedTrack = playlist.Track{}
 	m.requestedTrackActive = false
+	return m.playbackTrackStarted(m.playingTrack)
 }
 
 // adoptSupersededStart handles the result of a start that a newer request
@@ -50,13 +56,14 @@ func (m *Model) commitPlaybackTrack() {
 // switched to that track, and it keeps playing until the newer request lands,
 // so it becomes the owner unless a later start already did or playback
 // stopped since. A refused or failed start changed nothing.
-func (m *Model) adoptSupersededStart(msg streamPlayedMsg) {
+func (m *Model) adoptSupersededStart(msg streamPlayedMsg) tea.Cmd {
 	if msg.err != nil || msg.gen <= m.playingTrackGen || m.player == nil || !m.player.IsPlaying() {
-		return
+		return nil
 	}
 	m.playingTrack = msg.track
 	m.playingTrackActive = true
 	m.playingTrackGen = msg.gen
+	return m.playbackTrackStarted(msg.track)
 }
 
 // failPlaybackTrack drops the requested track after its start failed. The

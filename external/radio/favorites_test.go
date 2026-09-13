@@ -32,6 +32,22 @@ func TestFavoritesToggle(t *testing.T) {
 	}
 }
 
+// Toggle reports which lookup failed when no config directory can be resolved,
+// since the UI surfaces the raw error text.
+func TestFavoritesToggleConfigDirError(t *testing.T) {
+	for _, key := range []string{"CLIAMP_CONFIG_DIR", "XDG_CONFIG_HOME", "HOME", "USERPROFILE", "APPDATA"} {
+		t.Setenv(key, "")
+	}
+	f := &Favorites{}
+	_, err := f.Toggle(CatalogStation{Name: "Test FM", URL: "https://test.example/stream"})
+	if err == nil || !strings.HasPrefix(err.Error(), "resolve radio favorites directory: ") {
+		t.Fatalf("Toggle error = %v; want radio favorites directory context", err)
+	}
+	if f.path != "" || f.Revision() != 0 {
+		t.Fatal("failed directory resolution changed the store")
+	}
+}
+
 func TestFavoritesRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "radio_favorites.toml")

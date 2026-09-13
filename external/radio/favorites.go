@@ -87,7 +87,7 @@ func (f *Favorites) Toggle(s CatalogStation) (bool, error) {
 	if f.path == "" {
 		dir, err := appdir.Dir()
 		if err != nil {
-			return false, err
+			return false, fmt.Errorf("resolve radio favorites directory: %w", err)
 		}
 		f.path = filepath.Join(dir, favoritesFile)
 	}

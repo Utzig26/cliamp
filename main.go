@@ -523,6 +523,7 @@ func run(overrides config.Overrides, positional []string, daemon, visualizer60FP
 			TrackDuration: func() int { t, _ := pl.Current(); return t.DurationSecs },
 			PlaylistCount: func() int { return pl.Len() },
 			CurrentIndex:  func() int { return pl.Index() },
+			HasNext:       pl.HasNext,
 			QueueList: func() []luaplugin.QueueEntry {
 				tracks := pl.Tracks()
 				out := make([]luaplugin.QueueEntry, len(tracks))

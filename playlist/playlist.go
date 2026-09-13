@@ -776,6 +776,33 @@ func (p *Playlist) Next() (Track, bool) {
 	return cloneTrack(p.tracks[idx]), true
 }
 
+// HasNext reports whether a playable track follows the current one in play
+// order: the play-next queue first, then repeat-one, then the shuffled or
+// sequential order, wrapping to the start when repeat-all is on. Unlike
+// PeekNext it answers existence, so it stays true at a shuffle wrap where the
+// next track is not decided yet.
+func (p *Playlist) HasNext() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.tracks) == 0 {
+		return false
+	}
+	if _, _, ok := p.nextPlayableQueued(); ok {
+		return true
+	}
+	if p.repeat == RepeatOne {
+		return p.isPlayable(p.currentOrderTrackIndex())
+	}
+	if _, _, ok := p.firstPlayableOrderSlot(p.pos+1, len(p.order)); ok {
+		return true
+	}
+	if p.repeat != RepeatAll {
+		return false
+	}
+	_, _, ok := p.firstPlayableOrderSlot(0, len(p.order))
+	return ok
+}
+
 // PeekNext returns the next track without advancing the playlist position.
 // Returns false when the next track can't be predicted (e.g., shuffle wrap).
 func (p *Playlist) PeekNext() (Track, bool) {

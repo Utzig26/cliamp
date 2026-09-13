@@ -567,6 +567,10 @@ p:<span class="k">on</span>(<span class="s">"track.change"</span>, <span class="
           <div class="d">Ten events to subscribe to: track changes, scrobbles, seeks, volume, EQ, shuffle and repeat, queue edits, start and quit. Track-change events fire after playback starts successfully, including YouTube, SoundCloud, and gapless transitions. Buffering, failed, or superseded starts do not emit a track change.</div>
         </div>
         <div class="api-i">
+          <div class="sig">cliamp.queue.has_next()</div>
+          <div class="d">Reports whether another playable track exists, honoring the play-next queue, repeat, and shuffle.</div>
+        </div>
+        <div class="api-i">
           <div class="sig">p:bind("ctrl+n", fn) · p:command("name", fn)</div>
           <div class="d">Register your own key bindings and shell-invokable commands.</div>
         </div>

@@ -312,6 +312,7 @@ You can read the playlist without permission. To change it, declare `permissions
 cliamp.queue.list()        --> array of {title, artist, album, path, index, queued}
 cliamp.queue.count()       --> number of tracks
 cliamp.queue.current()     --> 0-based index of the current track
+cliamp.queue.has_next()    --> true when a playable track follows in play order (play-next queue, repeat, shuffle)
 
 -- mutate (requires "control")
 cliamp.queue.add(path)         -- resolve a file/dir/URL and append

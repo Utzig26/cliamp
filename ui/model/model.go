@@ -424,7 +424,11 @@ type Model struct {
 	// the old track keeps playing.
 	playingTrack       playlist.Track
 	playingTrackActive bool
-	playbackDetached   bool
+	// playingTrackStarted is set once the engine has started playingTrack and
+	// track.change has fired. It stays false while a stream buffers or after a
+	// start failed, so those never count as a finished track.
+	playingTrackStarted bool
+	playbackDetached    bool
 	// playingProvider names the provider that was active when the playing
 	// track started, so a label for it stays right after the listener
 	// switches providers while it keeps playing.

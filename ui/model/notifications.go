@@ -112,6 +112,7 @@ func (m *Model) notifyPlayback() {
 
 // nowPlaying fires a now-playing notification for the given track if configured.
 func (m *Model) nowPlaying(track playlist.Track) {
+	m.playingTrackStarted = true
 	if m.luaMgr != nil && m.luaMgr.HasHooks() {
 		m.luaMgr.Emit(luaplugin.EventTrackChange, trackToMap(track))
 	}

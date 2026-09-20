@@ -260,9 +260,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			track, idx := m.currentPlaybackTrack()
 			m.player.Stop()
 			if idx >= 0 {
+				// playTrack clears the marker for every new start, so carry it
+				// across this one restart only.
+				ytdlLiveDrain := m.reconnect.ytdlLiveDrain
+				playCmd := m.playTrack(track)
+				m.reconnect.ytdlLiveDrain = ytdlLiveDrain
 				// Preserve any seek/lyric commands already queued this tick
 				// rather than dropping them on the early return.
-				batch := []tea.Cmd{m.playTrack(track), tickCmdAt(ui.TickFast)}
+				batch := []tea.Cmd{playCmd, tickCmdAt(ui.TickFast)}
 				if seekCmd != nil {
 					batch = append(batch, seekCmd)
 				}
@@ -342,6 +347,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// A live stream has no natural end. A clean decoder EOF is a
 				// disconnect, so retry this station instead of advancing.
 				m.scheduleReconnect(now)
+				m.reconnect.ytdlLiveDrain = playlist.IsYTDL(finishedTrack.Path)
 			} else {
 				// Track drained to end — always ≥ 50%. The player is still on
 				// the finished track here, so its live duration is authoritative
@@ -790,6 +796,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.buffering = false
+		ytdlLiveDrain := m.reconnect.ytdlLiveDrain
+		m.reconnect.ytdlLiveDrain = false
+		if msg.err != nil && ytdlLiveDrain {
+			// The live stream drained and cannot be restarted: it has ended.
+			m.player.Stop()
+			return m, m.nextTrack()
+		}
 		var resumeCmd tea.Cmd
 		if msg.err != nil {
 			m.err = msg.err

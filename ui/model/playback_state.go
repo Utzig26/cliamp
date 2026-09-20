@@ -17,7 +17,10 @@ func (m Model) currentPlaybackTrack() (playlist.Track, int) {
 
 func (m Model) currentPlaybackIsLive(track playlist.Track) bool {
 	if track.IsLive() {
-		return true
+		// A yt-dlp live flag is a listing-time snapshot and may be restored from
+		// a favorite or saved playlist. Once the broadcast ends the same URL
+		// serves a finite recording, and the player then reports its duration.
+		return !playlist.IsYTDL(track.Path) || m.player == nil || m.player.Duration() <= 0
 	}
 	reporter, ok := m.player.(interface{ IsLiveStream() bool })
 	return ok && reporter.IsLiveStream()

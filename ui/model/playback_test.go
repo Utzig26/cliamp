@@ -796,6 +796,88 @@ func TestDrainedLiveStreamReconnectsCurrentStation(t *testing.T) {
 	}
 }
 
+func newYTDLLiveDrainModel(player *playbackFakeEngine) Model {
+	p := playlist.New()
+	p.Replace([]playlist.Track{
+		{Title: "Live", Path: "https://music.youtube.com/watch?v=live1", Stream: true, Realtime: true},
+		{Title: "Next", Path: "https://music.youtube.com/watch?v=next1", Stream: true, DurationSecs: 100},
+	})
+	p.SetIndex(0)
+	m := Model{
+		player:   player,
+		playlist: p,
+		vis:      ui.NewVisualizer(float64(player.SampleRate())),
+	}
+	m.SetVisualizer("none")
+	return m
+}
+
+func TestDrainedYTDLLiveStreamReconnectsInPlace(t *testing.T) {
+	m := newYTDLLiveDrainModel(&playbackFakeEngine{playing: true, drained: true})
+
+	now := time.Now()
+	updated, _ := m.Update(tickMsg(now))
+	m = updated.(Model)
+
+	if got := m.playlist.Index(); got != 0 {
+		t.Fatalf("playlist index = %d, want 0 after live stream drained", got)
+	}
+	if m.reconnect.at.IsZero() || !m.reconnect.at.After(now) {
+		t.Fatalf("reconnect time = %v, want a future retry", m.reconnect.at)
+	}
+}
+
+// The live flag is a listing-time snapshot that favorites and saved playlists
+// keep. Once the URL serves the finished recording the player knows its
+// duration, and the drain is a normal end of track.
+func TestDrainedYTDLRecordingWithStaleLiveFlagAdvances(t *testing.T) {
+	m := newYTDLLiveDrainModel(&playbackFakeEngine{playing: true, drained: true, duration: 90 * time.Minute})
+
+	updated, _ := m.Update(tickMsg(time.Now()))
+	m = updated.(Model)
+
+	if got := m.playlist.Index(); got != 1 {
+		t.Fatalf("playlist index = %d, want 1 after the recording finished", got)
+	}
+	if !m.reconnect.at.IsZero() {
+		t.Fatalf("reconnect time = %v, want none", m.reconnect.at)
+	}
+}
+
+func TestYTDLLiveStreamThatCannotRestartAdvances(t *testing.T) {
+	player := &playbackFakeEngine{playing: true, drained: true}
+	m := newYTDLLiveDrainModel(player)
+	livePath := m.playlist.Tracks()[0].Path
+
+	now := time.Now()
+	updated, _ := m.Update(tickMsg(now))
+	m = updated.(Model)
+	player.drained = false
+	updated, _ = m.Update(tickMsg(m.reconnect.at.Add(time.Millisecond)))
+	m = updated.(Model)
+	updated, _ = m.Update(streamPlayedMsg{path: livePath, gen: m.requests.stream, err: errors.New("This live stream recording is not available.")})
+	m = updated.(Model)
+
+	if got := m.playlist.Index(); got != 1 {
+		t.Fatalf("playlist index = %d, want 1 after the ended stream failed to restart", got)
+	}
+}
+
+// A start the user asked for that fails stays put, as before.
+func TestYTDLLiveStreamFailedFirstStartDoesNotAdvance(t *testing.T) {
+	player := &playbackFakeEngine{}
+	m := newYTDLLiveDrainModel(player)
+	track, _ := m.playlist.Current()
+
+	m.playTrack(track)
+	updated, _ := m.Update(streamPlayedMsg{path: track.Path, gen: m.requests.stream, err: errors.New("unavailable")})
+	m = updated.(Model)
+
+	if got := m.playlist.Index(); got != 0 {
+		t.Fatalf("playlist index = %d, want 0 after a failed first start", got)
+	}
+}
+
 func TestGaplessAdvanceDoesNotAlsoDrainNextTrack(t *testing.T) {
 	player := &playbackFakeEngine{playing: true, gaplessAdvanced: true, drained: true}
 	p := playlist.New()

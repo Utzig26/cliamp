@@ -556,6 +556,7 @@ func (m *Model) beginPlaybackTrack(track playlist.Track) (playlist.Track, tea.Cm
 	historyCmd := m.recordListenedTrack(track)
 	m.reconnect.attempts = 0
 	m.reconnect.at = time.Time{}
+	m.reconnect.ytdlLiveDrain = false
 	m.streamTitle = ""
 	m.lyrics.lines = nil
 	m.lyrics.err = nil

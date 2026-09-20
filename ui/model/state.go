@@ -343,6 +343,10 @@ type ytdlBatchState struct {
 type reconnectState struct {
 	attempts int
 	at       time.Time
+	// ytdlLiveDrain marks a restart scheduled because a yt-dlp live stream
+	// drained. If that restart fails the broadcast is over, so playback
+	// advances instead of stopping on the ended stream.
+	ytdlLiveDrain bool
 }
 
 // devicePickerState holds state for the audio device picker overlay.

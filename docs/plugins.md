@@ -229,7 +229,7 @@ In `playback.state`, `status` is `"playing"`, `"paused"`, or `"stopped"`. In `pl
 
 `track.change` fires after playback starts successfully for all sources, including YouTube and SoundCloud. A stream that is still buffering, fails to start, or is superseded before it starts does not emit this event. Gapless transitions also emit `track.change`.
 
-`queue.end` reports the last track that emitted `track.change`. A stream still buffering when the queue runs out is not reported, and a failed start emits nothing. After a failed start, `queue.end` does not fire until another track starts, even if the previous track is still playing.
+`queue.end` reports the last track that emitted `track.change`. It fires when the track drains, at a gapless boundary with nothing queued, on next from the last track, and on next after the playlist was emptied while the track played. A stream still buffering when the queue runs out is not reported, and a failed start emits nothing. After a failed start, `queue.end` does not fire until another track starts, even if the previous track is still playing.
 
 cliamp sends `player.*` and `queue.change` events by comparing state after each UI update. They cover every source, including a keypress, IPC, MPRIS, or another plugin.
 

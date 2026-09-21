@@ -11,6 +11,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/bjarneo/cliamp/history"
+	"github.com/bjarneo/cliamp/internal/playback"
 	"github.com/bjarneo/cliamp/playlist"
 	"github.com/bjarneo/cliamp/ui"
 )
@@ -844,7 +845,21 @@ func TestDrainedYTDLRecordingWithStaleLiveFlagAdvances(t *testing.T) {
 	}
 }
 
-func TestYTDLLiveStreamThatCannotRestartAdvances(t *testing.T) {
+// failYTDLLiveRestart fires the pending reconnect and reports the restart as failed.
+func failYTDLLiveRestart(t *testing.T, m Model, path string) Model {
+	t.Helper()
+	if m.reconnect.at.IsZero() {
+		t.Fatal("no restart scheduled")
+	}
+	updated, _ := m.Update(tickMsg(m.reconnect.at.Add(time.Millisecond)))
+	m = updated.(Model)
+	updated, _ = m.Update(streamPlayedMsg{path: path, gen: m.requests.stream, err: errors.New("This live stream recording is not available.")})
+	return updated.(Model)
+}
+
+// A failed restart may be a network outage rather than the end of the
+// broadcast, so the stream gets backed-off retries before playback advances.
+func TestYTDLLiveStreamThatCannotRestartRetriesThenAdvances(t *testing.T) {
 	player := &playbackFakeEngine{playing: true, drained: true}
 	m := newYTDLLiveDrainModel(player)
 	livePath := m.playlist.Tracks()[0].Path
@@ -853,13 +868,77 @@ func TestYTDLLiveStreamThatCannotRestartAdvances(t *testing.T) {
 	updated, _ := m.Update(tickMsg(now))
 	m = updated.(Model)
 	player.drained = false
+
+	var delays []time.Duration
+	for i := 0; i < ytdlLiveDrainRestarts; i++ {
+		if got := m.playlist.Index(); got != 0 {
+			t.Fatalf("playlist index = %d before restart %d, want 0", got, i+1)
+		}
+		before := time.Now()
+		if i == 0 {
+			before = now
+		}
+		delays = append(delays, m.reconnect.at.Sub(before).Round(time.Second))
+		m = failYTDLLiveRestart(t, m, livePath)
+	}
+
+	if want := []time.Duration{time.Second, 2 * time.Second, 4 * time.Second}; !slices.Equal(delays, want) {
+		t.Fatalf("restart delays = %v, want %v", delays, want)
+	}
+	if got := m.playlist.Index(); got != 1 {
+		t.Fatalf("playlist index = %d, want 1 after %d failed restarts", got, ytdlLiveDrainRestarts)
+	}
+	if m.reconnect.ytdlLiveDrain || m.reconnect.attempts != 0 {
+		t.Fatalf("reconnect state = %+v, want cleared for the next track", m.reconnect)
+	}
+}
+
+func TestYTDLLiveStreamRestartThatSucceedsStaysOnStream(t *testing.T) {
+	player := &playbackFakeEngine{playing: true, drained: true}
+	m := newYTDLLiveDrainModel(player)
+	livePath := m.playlist.Tracks()[0].Path
+
+	updated, _ := m.Update(tickMsg(time.Now()))
+	m = updated.(Model)
+	player.drained = false
+	m = failYTDLLiveRestart(t, m, livePath)
 	updated, _ = m.Update(tickMsg(m.reconnect.at.Add(time.Millisecond)))
 	m = updated.(Model)
-	updated, _ = m.Update(streamPlayedMsg{path: livePath, gen: m.requests.stream, err: errors.New("This live stream recording is not available.")})
+	updated, _ = m.Update(streamPlayedMsg{path: livePath, gen: m.requests.stream})
 	m = updated.(Model)
 
-	if got := m.playlist.Index(); got != 1 {
-		t.Fatalf("playlist index = %d, want 1 after the ended stream failed to restart", got)
+	if got := m.playlist.Index(); got != 0 {
+		t.Fatalf("playlist index = %d, want 0 after the stream came back", got)
+	}
+	if m.reconnect.ytdlLiveDrain || m.reconnect.attempts != 0 || !m.reconnect.at.IsZero() {
+		t.Fatalf("reconnect state = %+v, want cleared after a successful restart", m.reconnect)
+	}
+}
+
+// When the ended stream was the last track nothing else will report the stop.
+func TestYTDLLiveStreamThatEndsTheQueueNotifiesStopped(t *testing.T) {
+	player := &playbackFakeEngine{playing: true, drained: true}
+	m := newYTDLLiveDrainModel(player)
+	m.playlist.Replace(m.playlist.Tracks()[:1])
+	m.playlist.SetIndex(0)
+	notifier := &fakeNotifier{}
+	m.notifier = notifier
+	livePath := m.playlist.Tracks()[0].Path
+
+	updated, _ := m.Update(tickMsg(time.Now()))
+	m = updated.(Model)
+	player.drained = false
+	for i := 0; i < ytdlLiveDrainRestarts-1; i++ {
+		m = failYTDLLiveRestart(t, m, livePath)
+	}
+	before := len(notifier.updates)
+	m = failYTDLLiveRestart(t, m, livePath)
+
+	if len(notifier.updates) == before {
+		t.Fatal("no playback notification after the last restart failed and the queue ended")
+	}
+	if last := notifier.updates[len(notifier.updates)-1]; last.Status != playback.StatusStopped {
+		t.Fatalf("last notified status = %v, want stopped", last.Status)
 	}
 }
 

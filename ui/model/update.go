@@ -260,11 +260,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			track, idx := m.currentPlaybackTrack()
 			m.player.Stop()
 			if idx >= 0 {
-				// playTrack clears the marker for every new start, so carry it
-				// across this one restart only.
-				ytdlLiveDrain := m.reconnect.ytdlLiveDrain
+				// playTrack resets reconnect state for every new start, so carry
+				// the live-drain marker and its attempt count across this restart.
+				ytdlLiveDrain, attempts := m.reconnect.ytdlLiveDrain, m.reconnect.attempts
 				playCmd := m.playTrack(track)
-				m.reconnect.ytdlLiveDrain = ytdlLiveDrain
+				if ytdlLiveDrain {
+					m.reconnect.ytdlLiveDrain, m.reconnect.attempts = true, attempts
+				}
 				// Preserve any seek/lyric commands already queued this tick
 				// rather than dropping them on the early return.
 				batch := []tea.Cmd{playCmd, tickCmdAt(ui.TickFast)}
@@ -799,9 +801,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		ytdlLiveDrain := m.reconnect.ytdlLiveDrain
 		m.reconnect.ytdlLiveDrain = false
 		if msg.err != nil && ytdlLiveDrain {
-			// The live stream drained and cannot be restarted: it has ended.
+			// The drained live stream did not restart. The cause may be a
+			// network outage or the end of the broadcast, so retry with
+			// backoff before giving up on it and advancing.
 			m.player.Stop()
-			return m, m.nextTrack()
+			if m.reconnect.attempts < ytdlLiveDrainRestarts {
+				m.scheduleReconnect(time.Now())
+				m.reconnect.ytdlLiveDrain = true
+				m.notifyAll()
+				return m, nil
+			}
+			m.reconnect.attempts = 0
+			cmd := m.nextTrack()
+			m.notifyAll()
+			return m, cmd
 		}
 		var resumeCmd tea.Cmd
 		if msg.err != nil {

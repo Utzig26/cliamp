@@ -340,12 +340,17 @@ type ytdlBatchState struct {
 }
 
 // reconnectState holds state for stream auto-reconnect with exponential backoff.
+// ytdlLiveDrainRestarts bounds the backed-off restarts (1s, 2s, 4s) of a
+// drained yt-dlp live stream before playback advances.
+const ytdlLiveDrainRestarts = 3
+
 type reconnectState struct {
 	attempts int
 	at       time.Time
-	// ytdlLiveDrain marks a restart scheduled because a yt-dlp live stream
-	// drained. If that restart fails the broadcast is over, so playback
-	// advances instead of stopping on the ended stream.
+	// ytdlLiveDrain marks restarts scheduled because a yt-dlp live stream
+	// drained. Once ytdlLiveDrainRestarts of them have failed the stream is
+	// taken to be over or unreachable, and playback advances instead of
+	// stopping on it.
 	ytdlLiveDrain bool
 }
 

@@ -726,8 +726,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case coverArtLoadedMsg:
-		// A stale generation, or a track change since the fetch started, makes
-		// this image the wrong one to show.
 		if msg.gen != m.requests.coverArt || msg.src != m.coverArt.src {
 			return m, nil
 		}

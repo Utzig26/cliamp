@@ -16,16 +16,12 @@ import (
 	"github.com/bjarneo/cliamp/internal/fileutil"
 )
 
-// Album art sizes, smallest first. The layout turns these into a row count and
-// clamps them to the header it has; "large" means as tall as the header allows.
 const (
 	CoverArtSmall  = "small"
 	CoverArtMedium = "medium"
 	CoverArtLarge  = "large"
 )
 
-// NormalizeCoverArtSize maps any spelling to a known size, defaulting to
-// medium so an unreadable value never disables the artwork silently.
 func NormalizeCoverArtSize(size string) string {
 	switch strings.ToLower(strings.TrimSpace(size)) {
 	case CoverArtSmall:
@@ -376,23 +372,23 @@ type Config struct {
 	Repeat           string      // "off", "all", or "one"
 	Shuffle          bool
 	Mono             bool
-	Speed            float64                      // playback speed ratio: 0.25–2.0 (default 1.0)
-	AutoPlay         bool                         // start playback automatically on launch (radio streams, CLI tracks)
-	SeekStepLarge    int                          // seconds for Shift+Left/Right seek jumps
-	Provider         string                       // default provider: "radio", "podcast", "navidrome", "lyrion", "spotify", "qobuz", "tidal", "plex", "jellyfin", "emby", "audiobookshelf", "soundcloud", "mixcloud", "netease", "yandex", "ytmusic" (default "radio")
-	Theme            string                       // theme name, or "" for ANSI default
-	Visualizer       string                       // visualizer mode name, or "" for default (Bars)
-	VisRows          int                          // visualizer height in rows at the full layout tier, or 0 for the built-in default
-	SampleRate       int                          // output sample rate: 22050, 44100, 48000, 96000, 192000
-	BufferMs         int                          // speaker buffer in milliseconds (50-5000)
-	ResampleQuality  int                          // beep resample quality factor (1–4)
-	BitDepth         int                          // PCM bit depth for FFmpeg output: 16 or 32
-	Simplified       bool                         // simplified playback view: track summary and time strip
-	HideHelpBar      bool                         // hide the key-binding hint bar above the status line
-	HideSettingsPane bool                         // close the settings pane beside the playlist
-	ShowMetadata     bool                         // expand highlighted-track metadata below settings (default false)
-	CoverArt         bool                         // draw album art beside the header at the full tier (default false)
-	CoverArtSize     string                       // album art size: small, medium, or large (default medium)
+	Speed            float64 // playback speed ratio: 0.25–2.0 (default 1.0)
+	AutoPlay         bool    // start playback automatically on launch (radio streams, CLI tracks)
+	SeekStepLarge    int     // seconds for Shift+Left/Right seek jumps
+	Provider         string  // default provider: "radio", "podcast", "navidrome", "lyrion", "spotify", "qobuz", "tidal", "plex", "jellyfin", "emby", "audiobookshelf", "soundcloud", "mixcloud", "netease", "yandex", "ytmusic" (default "radio")
+	Theme            string  // theme name, or "" for ANSI default
+	Visualizer       string  // visualizer mode name, or "" for default (Bars)
+	VisRows          int     // visualizer height in rows at the full layout tier, or 0 for the built-in default
+	SampleRate       int     // output sample rate: 22050, 44100, 48000, 96000, 192000
+	BufferMs         int     // speaker buffer in milliseconds (50-5000)
+	ResampleQuality  int     // beep resample quality factor (1–4)
+	BitDepth         int     // PCM bit depth for FFmpeg output: 16 or 32
+	Simplified       bool    // simplified playback view: track summary and time strip
+	HideHelpBar      bool    // hide the key-binding hint bar above the status line
+	HideSettingsPane bool    // close the settings pane beside the playlist
+	ShowMetadata     bool    // expand highlighted-track metadata below settings (default false)
+	CoverArt         bool
+	CoverArtSize     string
 	Expanded         bool                         // start with the playlist expanded (the Ctrl+X state)
 	PaddingH         int                          // horizontal padding for the UI frame (default 3)
 	PaddingV         int                          // vertical padding for the UI frame (default 1)

@@ -297,7 +297,6 @@ func fetchTrackLyricsCmd(track playlist.Track, artist, title, query string, gen 
 	}
 }
 
-// fetchCoverArtCmd downloads and decodes album artwork off the UI goroutine.
 func fetchCoverArtCmd(src string, gen uint64) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

@@ -569,8 +569,6 @@ func (m *Model) beginPlaybackTrack(track playlist.Track) (playlist.Track, tea.Cm
 	m.seek.timerFor = 0
 	m.seek.grace = 0
 	m.seek.graceFor = 0
-	// The artwork follows the playing track. refreshCoverArtFor is a no-op when
-	// it is switched off or the art has not changed.
 	if cmd := m.refreshCoverArtFor(track); cmd != nil {
 		historyCmd = tea.Batch(historyCmd, cmd)
 	}

@@ -1,10 +1,3 @@
-// Package coverart renders album artwork as terminal text.
-//
-// Artwork is drawn with the upper-half-block character: every cell carries two
-// stacked pixels, the top one as the foreground colour and the bottom one as
-// the background. The output stays ordinary styled text, so it measures and
-// composes like any other string in the Bubbletea view — unlike terminal
-// graphics protocols, whose escape sequences the cell renderer strips.
 package coverart
 
 import (
@@ -12,8 +5,8 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	_ "image/jpeg" // decode Spotify and Navidrome artwork
-	_ "image/png"  // decode embedded local-file artwork
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"net/http"
 	"os"
@@ -22,15 +15,10 @@ import (
 	"github.com/bjarneo/cliamp/internal/httpclient"
 )
 
-// maxBytes caps how much of a response we read. Provider artwork is well under
-// this; the limit keeps a misbehaving host from exhausting memory.
 const maxBytes = 12 << 20
 
-// upperHalf fills the top half of a cell, leaving the bottom to the background.
 const upperHalf = '▀'
 
-// Load decodes the artwork at src, which may be an http(s) URL or a file://
-// URL (what the local provider writes for embedded art).
 func Load(ctx context.Context, src string) (image.Image, error) {
 	if src == "" {
 		return nil, fmt.Errorf("cover art: no source")
@@ -68,15 +56,11 @@ func Load(ctx context.Context, src string) (image.Image, error) {
 	return img, nil
 }
 
-// Fit returns the largest cell box holding b's aspect ratio within maxCols by
-// maxRows. A terminal cell is assumed twice as tall as it is wide, and a
-// half-block cell stacks two pixels, so a square image yields cols == 2*rows.
 func Fit(b image.Rectangle, maxCols, maxRows int) (cols, rows int) {
 	w, h := b.Dx(), b.Dy()
 	if maxCols < 2 || maxRows < 1 || w <= 0 || h <= 0 {
 		return 0, 0
 	}
-	// Start from the tallest box the width allows, then clamp to the height.
 	rows = maxCols * h / (2 * w)
 	if rows > maxRows {
 		rows = maxRows
@@ -91,9 +75,6 @@ func Fit(b image.Rectangle, maxCols, maxRows int) (cols, rows int) {
 	return cols, rows
 }
 
-// Render draws img as cols by rows cells of half-block text. Each line resets
-// colour at its end, so the caller can pad, centre, or frame the result like
-// any other string.
 func Render(img image.Image, cols, rows int) string {
 	if img == nil || cols < 1 || rows < 1 {
 		return ""
@@ -101,11 +82,8 @@ func Render(img image.Image, cols, rows int) string {
 	px := sample(img, cols, 2*rows)
 
 	var b strings.Builder
-	// Two SGR sequences plus the block run about 40 bytes per cell.
 	b.Grow(rows * cols * 40)
 	for y := range rows {
-		// Track the colours last written so runs of one shade emit the escape
-		// once rather than per cell.
 		var lastTop, lastBottom color.RGBA
 		var started bool
 		for x := range cols {
@@ -129,8 +107,6 @@ func Render(img image.Image, cols, rows int) string {
 	return b.String()
 }
 
-// sample box-filters img down to w by h pixels. Averaging each source box keeps
-// detail that nearest-neighbour drops at the sizes a terminal offers.
 func sample(img image.Image, w, h int) [][]color.RGBA {
 	b := img.Bounds()
 	out := make([][]color.RGBA, h)
@@ -154,9 +130,6 @@ func sample(img image.Image, w, h int) [][]color.RGBA {
 	return out
 }
 
-// average returns the mean colour of the source box. RGBA() is
-// alpha-premultiplied, so transparent artwork averages towards black rather
-// than rendering as stray bright pixels.
 func average(img image.Image, x0, y0, x1, y1 int) color.RGBA {
 	var sr, sg, sb, n uint64
 	for y := y0; y < y1; y++ {

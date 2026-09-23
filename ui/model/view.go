@@ -285,8 +285,6 @@ func (m Model) mainSections(playlist string, includeTransient, contentFirst bool
 			}
 		default:
 			if m.coverArtVisible() {
-				// The artwork column and the header text are one block: they
-				// are joined side by side rather than stacked.
 				sections = []string{m.renderHeaderWithCover()}
 			} else {
 				sections = []string{
@@ -543,7 +541,6 @@ func (m Model) renderTimeStatus() string {
 
 	left := timeStyle.Render(timeStr)
 	if m.coverArtVisible() {
-		// The status moves under the artwork, so the time keeps this row.
 		return left
 	}
 	status := m.playbackStatus()
@@ -552,8 +549,6 @@ func (m Model) renderTimeStatus() string {
 	return left + strings.Repeat(" ", gap) + status
 }
 
-// playbackStatus is the styled transport state — playing, paused, buffering.
-// It rides the time row normally, and the artwork column when that is drawn.
 func (m Model) playbackStatus() string {
 	track, _ := m.currentPlaybackTrack()
 	switch {

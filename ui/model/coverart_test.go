@@ -24,7 +24,6 @@ func testCover(w, h int) image.Image {
 	return img
 }
 
-// coverModel builds a full-tier model with artwork switched on.
 func coverModel(t *testing.T, width, height int, size string) Model {
 	t.Helper()
 	m := newLayoutTestModel(width, height)
@@ -36,9 +35,6 @@ func coverModel(t *testing.T, width, height int, size string) Model {
 }
 
 func TestCoverArtGeometrySizes(t *testing.T) {
-	// The header block is title, track, time, a blank, and the visualizer; the
-	// status line under the artwork takes one row of it, so a default
-	// seven-row visualizer leaves ten.
 	tests := []struct {
 		name     string
 		size     string
@@ -57,7 +53,6 @@ func TestCoverArtGeometrySizes(t *testing.T) {
 				t.Errorf("cover box = %dx%d cells, want %dx%d",
 					m.layout.coverCols, m.layout.coverRows, tt.wantCols, tt.wantRows)
 			}
-			// A square cover spans twice as many columns as rows.
 			if m.layout.coverCols != 2*m.layout.coverRows {
 				t.Errorf("cover is not square on screen: %d cols for %d rows",
 					m.layout.coverCols, m.layout.coverRows)
@@ -67,8 +62,6 @@ func TestCoverArtGeometrySizes(t *testing.T) {
 }
 
 func TestCoverArtFitsInsideHeader(t *testing.T) {
-	// Whatever the size asks for, the artwork plus its status row must never
-	// outgrow the header block it shares with the visualizer.
 	for _, size := range []string{config.CoverArtSmall, config.CoverArtMedium, config.CoverArtLarge} {
 		for _, dim := range [][2]int{{80, 24}, {100, 30}, {160, 50}, {200, 60}} {
 			m := coverModel(t, dim[0], dim[1], size)
@@ -115,8 +108,6 @@ func TestCoverArtHiddenWhenItCannotFit(t *testing.T) {
 }
 
 func TestCoverArtLeavesBeforeTheVisualizer(t *testing.T) {
-	// The artwork needs the full tier's header, so it goes one tier earlier
-	// than the visualizer, which the compact tier still draws.
 	compact := newLayoutTestModel(70, 20)
 	compact.coverArt.enabled = true
 	compact.coverArt.size = config.CoverArtLarge
@@ -134,7 +125,6 @@ func TestCoverArtLeavesBeforeTheVisualizer(t *testing.T) {
 }
 
 func TestCoverArtDoesNotStealBodyRows(t *testing.T) {
-	// Artwork claims width beside the header, never rows from the playlist.
 	off := newLayoutTestModel(120, 40)
 	on := coverModel(t, 120, 40, config.CoverArtLarge)
 
@@ -190,8 +180,6 @@ func TestRenderCoverColumnDimensions(t *testing.T) {
 			m.coverArt.img, m.coverArt.loading, m.coverArt.err = st.img, st.loading, st.err
 
 			lines := strings.Split(m.renderCoverColumn(), "\n")
-			// Every state pads to the same box so the header beside it never
-			// shifts as the image loads.
 			if len(lines) != m.layout.coverRows+1 {
 				t.Fatalf("column has %d lines, want %d", len(lines), m.layout.coverRows+1)
 			}

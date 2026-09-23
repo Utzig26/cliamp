@@ -44,7 +44,6 @@ func TestFit(t *testing.T) {
 	}
 }
 
-// solid builds a w by h image of one colour.
 func solid(w, h int, c color.Color) image.Image {
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
 	for y := range h {
@@ -81,8 +80,6 @@ func TestRenderDimensions(t *testing.T) {
 			if len(lines) != tt.wantLines {
 				t.Fatalf("Render() produced %d lines, want %d", len(lines), tt.wantLines)
 			}
-			// Every line must measure exactly cols cells once escapes are
-			// discounted, or the Bubbletea layout shifts around it.
 			for i, line := range lines {
 				if w := ansi.StringWidth(line); w != tt.cols {
 					t.Errorf("line %d width = %d, want %d", i, w, tt.cols)
@@ -113,15 +110,12 @@ func TestRenderColoursAndReset(t *testing.T) {
 			t.Errorf("line %d does not reset colour", i)
 		}
 	}
-	// A single-colour image should emit its escapes once per line, not per
-	// cell: 4 cells but only one foreground sequence.
 	if n := strings.Count(out, "\x1b[38;2;"); n != 2 {
 		t.Errorf("foreground escapes = %d, want 2 (one per line)", n)
 	}
 }
 
 func TestRenderSplitsTopAndBottom(t *testing.T) {
-	// Top half red, bottom half blue: one cell row must carry both.
 	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
 	red := color.RGBA{R: 255, A: 0xff}
 	blue := color.RGBA{B: 255, A: 0xff}

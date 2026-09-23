@@ -116,16 +116,13 @@ type lyricsState struct {
 	offset  time.Duration // synced-lyrics timestamp adjustment (persisted as lyrics_offset_ms)
 }
 
-// coverArtState holds the inline album artwork. The decoded image is kept
-// rather than the rendered text, so a resize or a size change redraws it
-// without fetching again.
 type coverArtState struct {
-	enabled bool   // user toggle, persisted as cover_art
-	size    string // config.CoverArtSmall, CoverArtMedium, or CoverArtLarge
+	enabled bool
+	size    string
 	img     image.Image
 	loading bool
 	err     error
-	src     string // AlbumArtURL of the image held, or of the in-flight fetch
+	src     string
 }
 
 // keymapOverlay holds state for the keybindings overlay.

@@ -148,13 +148,11 @@ func (m *Model) SetShowMetadata(v bool) {
 	m.refreshChrome()
 }
 
-// SetCoverArt draws album artwork beside the header at the full layout tier.
 func (m *Model) SetCoverArt(v bool) {
 	m.coverArt.enabled = v
 	m.refreshChrome()
 }
 
-// SetCoverArtSize picks the artwork height: small, medium, or large.
 func (m *Model) SetCoverArtSize(size string) {
 	m.coverArt.size = config.NormalizeCoverArtSize(size)
 	m.refreshChrome()

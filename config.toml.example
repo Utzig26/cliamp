@@ -75,6 +75,17 @@ eq = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 # section opens full info instead. Closing Settings preserves this preference.
 # show_metadata = false
 
+# Album artwork beside the header, with the playback status under it. K toggles
+# and saves. The visualizer narrows to share the row; the row budget below is
+# untouched, so the playlist keeps its height. Drawn at the full layout tier
+# only -- it leaves one tier before the visualizer does -- and only for tracks
+# whose provider supplies art (Spotify, Navidrome, embedded local-file art).
+# cover_art = false
+
+# Artwork height: small, medium, or large. "large" fills the header block, so a
+# taller vis_rows gives a bigger cover.
+# cover_art_size = "medium"
+
 # Start with the playlist at the expanded height, the state Ctrl+X toggles: the
 # list gets every body row the terminal has left instead of the shorter default.
 # The key keeps working and collapses the view as before.

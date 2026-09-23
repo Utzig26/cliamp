@@ -184,7 +184,6 @@ const (
 	screenNetSearch
 	screenURLInput
 	screenLyrics
-	screenCoverArt
 	screenJump
 	screenFullVisualizer
 )
@@ -221,8 +220,6 @@ func (s topLevelScreen) label() string {
 		return "Load URL"
 	case screenLyrics:
 		return "Lyrics"
-	case screenCoverArt:
-		return "Cover Art"
 	case screenJump:
 		return "Jump to Time"
 	case screenFullVisualizer:
@@ -554,8 +551,6 @@ func (m Model) activeScreen() topLevelScreen {
 		return screenInfo
 	case m.lyrics.visible:
 		return screenLyrics
-	case m.coverArt.visible:
-		return screenCoverArt
 	case m.jumping:
 		return screenJump
 	case m.urlInputting:

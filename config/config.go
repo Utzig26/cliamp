@@ -16,6 +16,27 @@ import (
 	"github.com/bjarneo/cliamp/internal/fileutil"
 )
 
+// Album art sizes, smallest first. The layout turns these into a row count and
+// clamps them to the header it has; "large" means as tall as the header allows.
+const (
+	CoverArtSmall  = "small"
+	CoverArtMedium = "medium"
+	CoverArtLarge  = "large"
+)
+
+// NormalizeCoverArtSize maps any spelling to a known size, defaulting to
+// medium so an unreadable value never disables the artwork silently.
+func NormalizeCoverArtSize(size string) string {
+	switch strings.ToLower(strings.TrimSpace(size)) {
+	case CoverArtSmall:
+		return CoverArtSmall
+	case CoverArtLarge:
+		return CoverArtLarge
+	default:
+		return CoverArtMedium
+	}
+}
+
 // maxVisRows caps the configurable visualizer height. The layout shrinks the
 // value further when the terminal cannot spare the rows.
 const maxVisRows = 40
@@ -370,6 +391,8 @@ type Config struct {
 	HideHelpBar      bool                         // hide the key-binding hint bar above the status line
 	HideSettingsPane bool                         // close the settings pane beside the playlist
 	ShowMetadata     bool                         // expand highlighted-track metadata below settings (default false)
+	CoverArt         bool                         // draw album art beside the header at the full tier (default false)
+	CoverArtSize     string                       // album art size: small, medium, or large (default medium)
 	Expanded         bool                         // start with the playlist expanded (the Ctrl+X state)
 	PaddingH         int                          // horizontal padding for the UI frame (default 3)
 	PaddingV         int                          // vertical padding for the UI frame (default 1)
@@ -758,6 +781,10 @@ func Load() (Config, error) {
 				cfg.HideSettingsPane = val == "true"
 			case "show_metadata":
 				cfg.ShowMetadata = val == "true"
+			case "cover_art":
+				cfg.CoverArt = val == "true"
+			case "cover_art_size":
+				cfg.CoverArtSize = parseString(val)
 			case "expanded":
 				cfg.Expanded = strings.ToLower(val) == "true"
 			case "audio_device":
@@ -1025,6 +1052,7 @@ func (c *Config) clamp() {
 	if c.VisRows != 0 {
 		c.VisRows = max(min(c.VisRows, maxVisRows), 1)
 	}
+	c.CoverArtSize = NormalizeCoverArtSize(c.CoverArtSize)
 	if c.LowPower {
 		c.Visualizer = "none"
 	}

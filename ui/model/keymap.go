@@ -190,6 +190,8 @@ func (m Model) keymapContext() (commandMode, string) {
 		return commandModeURL, "Load URL"
 	case screenLyrics:
 		return commandModeLyrics, "Lyrics"
+	case screenCoverArt:
+		return commandModeCoverArt, "Cover Art"
 	case screenJump:
 		return commandModeJump, "Jump to Time"
 	}

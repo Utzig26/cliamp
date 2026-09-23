@@ -17,6 +17,7 @@ import (
 	"github.com/bjarneo/cliamp/playlist"
 	"github.com/bjarneo/cliamp/provider"
 	"github.com/bjarneo/cliamp/resolve"
+	"github.com/bjarneo/cliamp/ui/coverart"
 )
 
 // — Message types used by tea.Cmd constructors —
@@ -293,6 +294,16 @@ func fetchTrackLyricsCmd(track playlist.Track, artist, title, query string, gen 
 		}
 		lines, err := lyrics.Fetch(artist, title)
 		return lyricsLoadedMsg{lines: lines, err: err, query: query, gen: gen}
+	}
+}
+
+// fetchCoverArtCmd downloads and decodes album artwork off the UI goroutine.
+func fetchCoverArtCmd(src string, gen uint64) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		img, err := coverart.Load(ctx, src)
+		return coverArtLoadedMsg{img: img, err: err, src: src, gen: gen}
 	}
 }
 

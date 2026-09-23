@@ -338,6 +338,23 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	}
 
+	// Cover art overlay
+	if m.coverArt.visible {
+		switch msg.String() {
+		case "ctrl+c":
+			return m.quit()
+		case "esc", "K":
+			nextRequest(&m.requests.coverArt)
+			m.coverArt.loading = false
+			m.coverArt.visible = false
+		case "r":
+			return m.retryCoverArt()
+		case "ctrl+x":
+			m.toggleExpandedView()
+		}
+		return nil
+	}
+
 	if m.jumping {
 		return m.handleJumpKey(msg)
 	}
@@ -905,6 +922,9 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 		if m.lyrics.visible {
 			return m.retryLyrics()
 		}
+
+	case "K":
+		return m.toggleCoverArt()
 
 	case "o":
 		m.openFileBrowser()

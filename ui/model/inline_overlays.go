@@ -181,6 +181,10 @@ func (m Model) activeOverlay() (overlayView, bool) {
 		return overlayView{
 			func(*Model) string { return sepHeader("Lyrics") },
 			(*Model).lyricsHelpLine, (*Model).renderLyricsBody}, true
+	case m.coverArt.visible:
+		return overlayView{
+			func(*Model) string { return sepHeader("Cover Art") },
+			(*Model).coverArtHelpLine, (*Model).renderCoverArtBody}, true
 	case m.jumping:
 		return overlayView{
 			func(*Model) string { return sepHeader("Jump to Time") },

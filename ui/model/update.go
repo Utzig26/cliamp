@@ -725,6 +725,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case coverArtLoadedMsg:
+		// A stale generation, or a track change since the fetch started, makes
+		// this image the wrong one to show.
+		if msg.gen != m.requests.coverArt || msg.src != m.coverArt.src {
+			return m, nil
+		}
+		m.coverArt.loading = false
+		m.coverArt.err = msg.err
+		m.coverArt.img = msg.img
+		return m, nil
+
 	case fbTracksResolvedMsg:
 		if len(msg.tracks) == 0 {
 			m.status.Warning("No audio files found", statusTTLDefault)

@@ -5,6 +5,7 @@ package model
 
 import (
 	"fmt"
+	"image"
 	"strings"
 	"time"
 
@@ -113,6 +114,17 @@ type lyricsState struct {
 	query   string // "artist\ntitle" of the last fetch
 	scroll  int
 	offset  time.Duration // synced-lyrics timestamp adjustment (persisted as lyrics_offset_ms)
+}
+
+// coverArtState holds the album artwork overlay. The decoded image is kept
+// rather than the rendered text so a resize can redraw it at the new size
+// without fetching again.
+type coverArtState struct {
+	visible bool
+	img     image.Image
+	loading bool
+	err     error
+	src     string // AlbumArtURL of the image held, or of the in-flight fetch
 }
 
 // keymapOverlay holds state for the keybindings overlay.
@@ -277,6 +289,7 @@ type requestState struct {
 	tracks       uint64
 	nav          uint64
 	lyrics       uint64
+	coverArt     uint64
 	netSearch    uint64
 	spotSearch   uint64
 	spotAlbum    uint64

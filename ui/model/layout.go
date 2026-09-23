@@ -28,10 +28,8 @@ type frameLayout struct {
 	twoColumn     bool
 	playlistWidth int
 	settingsWidth int
-	// coverCols and coverRows are the album artwork's box left of the header,
-	// both zero when no artwork is drawn.
-	coverCols int
-	coverRows int
+	coverCols     int
+	coverRows     int
 	// closedSettings is the same full-tier playback screen with the pane shut:
 	// source and volume share one row and the EQ, speed, and download readouts
 	// are not drawn at all.
@@ -201,9 +199,6 @@ func (m *Model) recomputeLayout() {
 		layout.fixedRows -= freed
 	}
 
-	// Artwork is sized last: it sits beside the header block, so it needs the
-	// visualizer height settled, including anything the metadata pane borrowed.
-	// It claims width only, leaving the row budget below untouched.
 	layout.coverCols, layout.coverRows = m.coverArtGeometry(layout)
 
 	layout.fullVisualizerRows = max(1, height-6-2*paddingV)
@@ -230,8 +225,6 @@ func (m *Model) recomputeLayout() {
 	if m.vis != nil {
 		m.vis.Cols = layout.panelWidth
 		if layout.coverCols > 0 && !m.fullVis {
-			// The artwork shares the header row, so the spectrum draws into
-			// what is left of it.
 			m.vis.Cols = max(1, layout.panelWidth-layout.coverCols-coverGutterWidth)
 		}
 		if m.simplified {

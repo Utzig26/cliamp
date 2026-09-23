@@ -49,7 +49,6 @@ const (
 	commandModeProviderSearch
 	commandModeSubs
 	commandModeSubsFilter
-	commandModeCoverArt
 )
 
 const commandModeAny = ^commandMode(0)
@@ -179,7 +178,7 @@ var commandRegistry = []commandSpec{
 	{Mode: commandModeMain, Keys: []string{"u"}, KeyLabel: "u", Label: "Load URL (stream/playlist)", Keymap: true},
 	{Mode: commandModeMain, Keys: []string{"d"}, KeyLabel: "d", Label: "Audio device picker", Keymap: true},
 	{Mode: commandModeMain, Keys: []string{"y"}, KeyLabel: "y", Label: "Show lyrics", Keymap: true},
-	{Mode: commandModeMain, Keys: []string{"K"}, KeyLabel: "K", Label: "Show cover art", Keymap: true},
+	{Mode: commandModeMain, Keys: []string{"K"}, KeyLabel: "K", Label: "Toggle cover art", Keymap: true},
 	{Mode: commandModeMain | commandModeProvider | commandModeProviderPill | commandModeVolume | commandModeEQ | commandModeShuffle | commandModeRepeat | commandModeSpeed, Keys: []string{"tab", "shift+tab"}, KeyLabel: "Tab/Shift+Tab", Label: "Focus", Keymap: true, ContextHelp: true},
 	{Mode: commandModeMain, Keys: []string{"esc", "backspace", "b"}, KeyLabel: "Esc", Label: "Back to provider", Keymap: true, ContextHelp: true, Cancel: true},
 	{Mode: commandModeAny, Keys: []string{"ctrl+k"}, KeyLabel: "Ctrl+K", Label: "Help", Keymap: true, ContextHelp: true, Help: true},
@@ -275,8 +274,6 @@ var commandRegistry = []commandSpec{
 	{Mode: commandModeLyrics, Keys: []string{"r"}, KeyLabel: "r", Label: "Retry", ContextHelp: true, Primary: true, Enabled: func(m Model) bool { return !m.lyrics.loading && (m.lyrics.err != nil || len(m.lyrics.lines) == 0) }},
 	{Mode: commandModeLyrics, Keys: []string{"[", "]"}, KeyLabel: "[ ]", Label: "Sync offset (−/+250 ms)", ContextHelp: true, Keymap: true, Enabled: func(m Model) bool { return m.lyricsSyncable() && m.lyricsHaveTimestamps() }},
 	{Mode: commandModeLyrics, Keys: []string{"esc"}, KeyLabel: "Esc", Label: "Close", ContextHelp: true, Cancel: true},
-	{Mode: commandModeCoverArt, Keys: []string{"r"}, KeyLabel: "r", Label: "Retry", ContextHelp: true, Primary: true, Enabled: func(m Model) bool { return !m.coverArt.loading && m.coverArt.img == nil }},
-	{Mode: commandModeCoverArt, Keys: []string{"esc"}, KeyLabel: "Esc", Label: "Close", ContextHelp: true, Cancel: true},
 	{Mode: commandModeInfo, Keys: []string{"esc"}, KeyLabel: "Esc", Label: "Close", ContextHelp: true, Cancel: true},
 	{Mode: commandModePlaylistManager, Keys: []string{"a"}, KeyLabel: "a", Label: "New playlist", ContextHelp: true, Primary: true, Enabled: func(m Model) bool {
 		return m.plManager.visible && m.plManager.screen == plMgrScreenList

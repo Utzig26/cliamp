@@ -592,6 +592,10 @@ func run(overrides config.Overrides, positional []string, daemon, visualizer60FP
 	if cfg.ShowMetadata {
 		m.SetShowMetadata(true)
 	}
+	m.SetCoverArtSize(cfg.CoverArtSize)
+	if cfg.CoverArt {
+		m.SetCoverArt(true)
+	}
 	if cfg.Expanded {
 		m.SetExpanded(true)
 	}

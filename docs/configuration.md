@@ -105,6 +105,12 @@ hide_settings_pane = false
 # Show highlighted-playlist metadata below Settings (Ctrl+I toggles and saves).
 show_metadata = false
 
+# Draw album artwork beside the header (K toggles and saves).
+cover_art = false
+
+# Artwork height: "small", "medium", or "large".
+cover_art_size = "medium"
+
 # UI theme name (see available themes in ~/.config/cliamp/themes/)
 theme = "Tokyo Night"
 

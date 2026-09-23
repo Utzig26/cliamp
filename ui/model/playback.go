@@ -569,12 +569,10 @@ func (m *Model) beginPlaybackTrack(track playlist.Track) (playlist.Track, tea.Cm
 	m.seek.timerFor = 0
 	m.seek.grace = 0
 	m.seek.graceFor = 0
-	// The overlay follows the playing track, so swap in the new artwork while
-	// it is open. refreshCoverArt is a no-op when the art has not changed.
-	if m.coverArt.visible {
-		if cmd := m.refreshCoverArtFor(track); cmd != nil {
-			historyCmd = tea.Batch(historyCmd, cmd)
-		}
+	// The artwork follows the playing track. refreshCoverArtFor is a no-op when
+	// it is switched off or the art has not changed.
+	if cmd := m.refreshCoverArtFor(track); cmd != nil {
+		historyCmd = tea.Batch(historyCmd, cmd)
 	}
 	if m.lyrics.visible {
 		q := lyricsLookupKey(track, track.Artist, track.Title)

@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/bjarneo/cliamp/config"
 	"github.com/bjarneo/cliamp/external/radio"
 	"github.com/bjarneo/cliamp/favorites"
 	"github.com/bjarneo/cliamp/history"
@@ -144,6 +145,18 @@ func (m *Model) SetHideSettingsPane(v bool) {
 // SetShowMetadata expands the highlighted-track details below Settings.
 func (m *Model) SetShowMetadata(v bool) {
 	m.showMetadata = v
+	m.refreshChrome()
+}
+
+// SetCoverArt draws album artwork beside the header at the full layout tier.
+func (m *Model) SetCoverArt(v bool) {
+	m.coverArt.enabled = v
+	m.refreshChrome()
+}
+
+// SetCoverArtSize picks the artwork height: small, medium, or large.
+func (m *Model) SetCoverArtSize(size string) {
+	m.coverArt.size = config.NormalizeCoverArtSize(size)
 	m.refreshChrome()
 }
 

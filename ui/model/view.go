@@ -284,14 +284,20 @@ func (m Model) mainSections(playlist string, includeTransient, contentFirst bool
 				m.renderPlaylistHeader(),
 			}
 		default:
-			sections = []string{
-				m.renderTitle(),
-				m.renderTrackInfo(),
-				m.renderTimeStatus(),
-				"",
-			}
-			if !m.visualizerDisabled() {
-				sections = append(sections, m.renderSpectrum())
+			if m.coverArtVisible() {
+				// The artwork column and the header text are one block: they
+				// are joined side by side rather than stacked.
+				sections = []string{m.renderHeaderWithCover()}
+			} else {
+				sections = []string{
+					m.renderTitle(),
+					m.renderTrackInfo(),
+					m.renderTimeStatus(),
+					"",
+				}
+				if !m.visualizerDisabled() {
+					sections = append(sections, m.renderSpectrum())
+				}
 			}
 			sections = append(sections, m.renderSeekBar())
 			switch {
@@ -506,7 +512,7 @@ func (m Model) renderTitle() string {
 		return title
 	}
 	indicator := dimStyle.Render("[" + label + "]")
-	gap := max(ui.PanelWidth-lipgloss.Width(title)-lipgloss.Width(indicator), 1)
+	gap := max(m.headerWidth()-lipgloss.Width(title)-lipgloss.Width(indicator), 1)
 	return title + strings.Repeat(" ", gap) + indicator
 }
 
@@ -515,7 +521,7 @@ func (m Model) renderTrackInfo() string {
 	name := trackInfoName(track, m.streamTitle)
 	// The "♫ " prefix takes two cells; the rest of the row is the marquee's,
 	// so a name only scrolls once it genuinely cannot fit.
-	return trackStyle.Render("♫ " + scrollTrackName(name, ui.PanelWidth-2, m.titleOff))
+	return trackStyle.Render("♫ " + scrollTrackName(name, m.headerWidth()-2, m.titleOff))
 }
 
 func (m Model) renderTimeStatus() string {
@@ -535,30 +541,38 @@ func (m Model) renderTimeStatus() string {
 		timeStr = fmt.Sprintf("%02d:%02d / LIVE", posMin, posSec)
 	}
 
-	var status string
-	switch {
-	case m.seek.active:
-		status = statusStyle.Render("⟳ Seeking...")
-	case m.buffering:
-		if elapsed := int(time.Since(m.bufferingAt).Seconds()); elapsed > 0 {
-			status = statusStyle.Render(fmt.Sprintf("◌ Buffering... (%ds)", elapsed))
-		} else {
-			status = statusStyle.Render("◌ Buffering...")
-		}
-	case m.player.IsPlaying() && m.player.IsPaused():
-		status = statusStyle.Render("⏸ Paused")
-	case m.player.IsPlaying() && track.Stream:
-		status = statusStyle.Render("● Streaming")
-	case m.player.IsPlaying():
-		status = statusStyle.Render("▶ Playing")
-	default:
-		status = dimStyle.Render("■ Stopped")
-	}
-
 	left := timeStyle.Render(timeStr)
-	gap := max(ui.PanelWidth-lipgloss.Width(left)-lipgloss.Width(status), 1)
+	if m.coverArtVisible() {
+		// The status moves under the artwork, so the time keeps this row.
+		return left
+	}
+	status := m.playbackStatus()
+	gap := max(m.headerWidth()-lipgloss.Width(left)-lipgloss.Width(status), 1)
 
 	return left + strings.Repeat(" ", gap) + status
+}
+
+// playbackStatus is the styled transport state — playing, paused, buffering.
+// It rides the time row normally, and the artwork column when that is drawn.
+func (m Model) playbackStatus() string {
+	track, _ := m.currentPlaybackTrack()
+	switch {
+	case m.seek.active:
+		return statusStyle.Render("⟳ Seeking...")
+	case m.buffering:
+		if elapsed := int(time.Since(m.bufferingAt).Seconds()); elapsed > 0 {
+			return statusStyle.Render(fmt.Sprintf("◌ Buffering... (%ds)", elapsed))
+		}
+		return statusStyle.Render("◌ Buffering...")
+	case m.player.IsPlaying() && m.player.IsPaused():
+		return statusStyle.Render("⏸ Paused")
+	case m.player.IsPlaying() && track.Stream:
+		return statusStyle.Render("● Streaming")
+	case m.player.IsPlaying():
+		return statusStyle.Render("▶ Playing")
+	default:
+		return dimStyle.Render("■ Stopped")
+	}
 }
 
 func (m Model) renderSpectrum() string {

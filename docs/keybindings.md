@@ -102,8 +102,7 @@ and `Esc` clears it.
 | `u` | Load URL (stream/playlist) |
 | `y` | Show or close lyrics |
 | `r` | Retry lyrics lookup while lyrics are open |
-| `K` | Show or close the album cover for the playing track. Drawn as half-block text, so it works in any truecolor terminal. Needs a provider that supplies artwork (Spotify, Navidrome, or a local file with embedded art) |
-| `r` | Retry the artwork fetch while the cover is open |
+| `K` | Turn album artwork on or off. The cover is drawn inline, left of the header, with the playback status under it; the visualizer narrows to share the row. Remembered in `cover_art`, sized by `cover_art_size`. Full layout tier only, and needs a provider that supplies artwork (Spotify, Navidrome, or a local file with embedded art) |
 | `[` / `]` | Adjust synced-lyrics timing offset (−/+250 ms) while lyrics show timestamped lines |
 | `i` | From the playlist, open full info for the highlighted item, including Path (`Up`/`Down` or `j`/`k` scroll; `i`/`Esc` closes) |
 | `Ctrl+I` | Toggle Metadata below Settings for the highlighted playlist item (remembered in `show_metadata`; requires a terminal that distinguishes Ctrl+I from Tab) |

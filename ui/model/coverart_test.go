@@ -209,7 +209,31 @@ func TestRenderHeaderWithCoverFitsPanel(t *testing.T) {
 	}
 }
 
-func TestTimeStatusMovesUnderTheCover(t *testing.T) {
+func TestCoverSitsOnTheRight(t *testing.T) {
+	m := coverModel(t, 120, 40, config.CoverArtMedium)
+	lines := strings.Split(m.renderHeaderWithCover(), "\n")
+	if len(lines) == 0 {
+		t.Fatal("header rendered empty")
+	}
+
+	strip := func(s string) string { return ansi.Strip(s) }
+	if got := strip(lines[0]); !strings.HasPrefix(got, "C L I A M P") {
+		t.Errorf("first line starts with %q, want the title", got[:min(20, len(got))])
+	}
+	for i, line := range lines[1 : m.layout.coverRows+1] {
+		plain := strip(line)
+		runes := []rune(plain)
+		if len(runes) < m.layout.coverCols {
+			t.Fatalf("line %d is %d cells, shorter than the cover", i, len(runes))
+		}
+		tail := string(runes[len(runes)-m.layout.coverCols:])
+		if !strings.Contains(tail, "\u2580") {
+			t.Errorf("line %d does not end in artwork: %q", i, tail)
+		}
+	}
+}
+
+func TestStatusMovesAboveTheCover(t *testing.T) {
 	off := newLayoutTestModel(120, 40)
 	if !strings.Contains(off.renderTimeStatus(), "Stopped") {
 		t.Error("without artwork the status should share the time row")
@@ -218,8 +242,20 @@ func TestTimeStatusMovesUnderTheCover(t *testing.T) {
 	if strings.Contains(on.renderTimeStatus(), "Stopped") {
 		t.Error("with artwork the status should leave the time row")
 	}
-	if !strings.Contains(on.renderCoverColumn(), "Stopped") {
-		t.Error("the status should sit under the artwork")
+	lines := strings.Split(on.renderCoverColumn(), "\n")
+	if !strings.Contains(lines[0], "Stopped") {
+		t.Errorf("the status should open the artwork column, got %q", ansi.Strip(lines[0]))
+	}
+}
+
+func TestStatusAlignsWithTheTitleRow(t *testing.T) {
+	m := coverModel(t, 120, 40, config.CoverArtMedium)
+	first := ansi.Strip(strings.Split(m.renderHeaderWithCover(), "\n")[0])
+	if !strings.HasPrefix(first, "C L I A M P") {
+		t.Fatalf("first row is %q, want the title row", first)
+	}
+	if !strings.Contains(first, "[Playlist]") || !strings.Contains(first, "Stopped") {
+		t.Errorf("the title row should carry both the screen label and the status, got %q", first)
 	}
 }
 

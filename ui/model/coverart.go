@@ -136,7 +136,7 @@ func (m Model) renderCoverColumn() string {
 	for i, line := range art {
 		art[i] = padCell(line, w)
 	}
-	return strings.Join(append(art, padCell(m.playbackStatus(), w)), "\n")
+	return strings.Join(append([]string{padCell(m.playbackStatus(), w)}, art...), "\n")
 }
 
 func padCell(text string, width int) string {
@@ -148,19 +148,19 @@ func padCell(text string, width int) string {
 }
 
 func (m Model) renderHeaderWithCover() string {
-	right := []string{
+	text := []string{
 		m.renderTitle(),
 		m.renderTrackInfo(),
 		m.renderTimeStatus(),
 		"",
 	}
 	if spectrum := m.renderSpectrum(); spectrum != "" {
-		right = append(right, spectrum)
+		text = append(text, spectrum)
 	}
 	return lipgloss.JoinHorizontal(
 		lipgloss.Top,
-		m.renderCoverColumn(),
+		strings.Join(text, "\n"),
 		strings.Repeat(" ", coverGutterWidth),
-		strings.Join(right, "\n"),
+		m.renderCoverColumn(),
 	)
 }

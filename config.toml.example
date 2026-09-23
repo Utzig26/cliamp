@@ -75,7 +75,7 @@ eq = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 # section opens full info instead. Closing Settings preserves this preference.
 # show_metadata = false
 
-# Album artwork beside the header, with the playback status under it. K toggles
+# Album artwork right of the header, with the playback status under it. K toggles
 # and saves. The visualizer narrows to share the row; the row budget below is
 # untouched, so the playlist keeps its height. Drawn at the full layout tier
 # only -- it leaves one tier before the visualizer does -- and only for tracks

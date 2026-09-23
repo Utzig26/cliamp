@@ -40,7 +40,7 @@ func coverSizeRows(size string) int {
 }
 
 func (m Model) coverArtGeometry(l frameLayout) (cols, rows int) {
-	if !m.coverArt.enabled || l.tier != layoutFull {
+	if !m.coverArt.enabled || l.tier != layoutFull || !m.providerIsSpotify() {
 		return 0, 0
 	}
 	if m.usesContentFirstLayout() || m.usesSimplifiedLayout() || m.visualizerDisabled() {
@@ -55,6 +55,13 @@ func (m Model) coverArtGeometry(l frameLayout) (cols, rows int) {
 		return 0, 0
 	}
 	return cols, rows
+}
+
+func (m Model) providerIsSpotify() bool {
+	if m.provider == nil || m.provPillIdx < 0 || m.provPillIdx >= len(m.providers) {
+		return false
+	}
+	return m.providers[m.provPillIdx].Key == "spotify"
 }
 
 func (m Model) coverArtVisible() bool { return m.layout.coverCols > 0 }

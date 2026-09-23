@@ -27,6 +27,10 @@ func testCover(w, h int) image.Image {
 func coverModel(t *testing.T, width, height int, size string) Model {
 	t.Helper()
 	m := newLayoutTestModel(width, height)
+	prov := commandsTestProvider{name: "Spotify"}
+	m.provider = prov
+	m.providers = []ProviderEntry{{Key: "spotify", Name: "Spotify", Provider: prov}}
+	m.provPillIdx = 0
 	m.coverArt.enabled = true
 	m.coverArt.size = config.NormalizeCoverArtSize(size)
 	m.coverArt.img = testCover(300, 300)
@@ -91,6 +95,13 @@ func TestCoverArtHiddenWhenItCannotFit(t *testing.T) {
 		{"provider focus takes the frame", func(m *Model) { m.focus = focusProvider }},
 		{"simplified view", func(m *Model) { m.simplified = true }},
 		{"visualizer too short to share", func(m *Model) { m.visRows = 1 }},
+		{"another provider is active", func(m *Model) {
+			other := commandsTestProvider{name: "Navidrome"}
+			m.provider = other
+			m.providers = []ProviderEntry{{Key: "navidrome", Name: "Navidrome", Provider: other}}
+			m.provPillIdx = 0
+		}},
+		{"no provider at all", func(m *Model) { m.provider = nil }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

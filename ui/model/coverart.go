@@ -96,7 +96,7 @@ func (m *Model) refreshCoverArt() tea.Cmd {
 }
 
 func (m *Model) refreshCoverArtFor(track playlist.Track) tea.Cmd {
-	if !m.coverArt.enabled {
+	if !m.coverArt.enabled || !m.providerIsSpotify() {
 		return nil
 	}
 	src := track.AlbumArtURL

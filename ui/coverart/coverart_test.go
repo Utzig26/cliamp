@@ -255,8 +255,12 @@ func TestLoadRejectsPrivateDestinations(t *testing.T) {
 		"ftp://example.com/cover.jpg",
 	} {
 		t.Run(src, func(t *testing.T) {
-			if _, err := Load(t.Context(), src); err == nil {
-				t.Error("Load() fetched a non-public destination")
+			want := "not a public address"
+			if strings.HasPrefix(src, "ftp://") {
+				want = "unsupported scheme"
+			}
+			if _, err := Load(t.Context(), src); err == nil || !strings.Contains(err.Error(), want) {
+				t.Errorf("Load() error = %v, want %q", err, want)
 			}
 		})
 	}

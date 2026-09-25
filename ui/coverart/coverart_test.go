@@ -278,3 +278,46 @@ func TestLoadRejectsRedirectToPrivate(t *testing.T) {
 		t.Fatalf("Load() error = %v, want the redirect to be refused", err)
 	}
 }
+
+func TestDialControlChecksTheDialedAddress(t *testing.T) {
+	tests := []struct {
+		address string
+		allowed bool
+	}{
+		{"93.184.216.34:443", true},
+		{"[2606:2800:220:1:248:1893:25c8:1946]:443", true},
+		{"127.0.0.1:80", false},
+		{"10.1.2.3:443", false},
+		{"169.254.169.254:80", false},
+		{"[::1]:443", false},
+		{"not-an-ip:80", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.address, func(t *testing.T) {
+			err := dialControl("tcp", tt.address, nil)
+			if (err == nil) != tt.allowed {
+				t.Errorf("dialControl(%q) error = %v, allowed = %v", tt.address, err, tt.allowed)
+			}
+		})
+	}
+}
+
+func TestLoadRefusesWhenTheDialedAddressIsPrivate(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("the request reached a loopback server")
+	}))
+	defer srv.Close()
+
+	prev := blockedIP
+	calls := 0
+	blockedIP = func(ip net.IP) bool {
+		calls++
+		return calls > 1 && prev(ip)
+	}
+	t.Cleanup(func() { blockedIP = prev })
+
+	_, err := Load(t.Context(), srv.URL)
+	if err == nil || !strings.Contains(err.Error(), "not a public address") {
+		t.Fatalf("Load() error = %v, want the dial to be refused", err)
+	}
+}

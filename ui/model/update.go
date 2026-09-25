@@ -731,7 +731,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.coverArt.loading = false
 		m.coverArt.err = msg.err
-		m.coverArt.img = msg.img
+		m.setCoverImage(msg.img)
 		return m, nil
 
 	case fbTracksResolvedMsg:

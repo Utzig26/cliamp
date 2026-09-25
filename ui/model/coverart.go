@@ -86,7 +86,7 @@ func (m *Model) toggleCoverArt() tea.Cmd {
 func (m *Model) refreshCoverArt() tea.Cmd {
 	track, idx := m.currentPlaybackTrack()
 	if idx < 0 {
-		m.coverArt.img = nil
+		m.setCoverImage(nil)
 		m.coverArt.err = nil
 		m.coverArt.loading = false
 		m.coverArt.src = ""
@@ -101,7 +101,7 @@ func (m *Model) refreshCoverArtFor(track playlist.Track) tea.Cmd {
 	}
 	src := track.AlbumArtURL
 	if src == "" {
-		m.coverArt.img = nil
+		m.setCoverImage(nil)
 		m.coverArt.err = nil
 		m.coverArt.loading = false
 		m.coverArt.src = ""
@@ -111,10 +111,31 @@ func (m *Model) refreshCoverArtFor(track playlist.Track) tea.Cmd {
 		return nil
 	}
 	m.coverArt.src = src
-	m.coverArt.img = nil
+	m.setCoverImage(nil)
 	m.coverArt.err = nil
 	m.coverArt.loading = true
 	return fetchCoverArtCmd(src, nextRequest(&m.requests.coverArt))
+}
+
+func (m *Model) setCoverImage(img image.Image) {
+	m.coverArt.img = img
+	m.coverArt.rendered = nil
+	m.rerenderCoverArt()
+}
+
+func (m *Model) rerenderCoverArt() {
+	w, rows := m.layout.coverCols, m.layout.coverRows
+	if m.coverArt.rendered != nil && m.coverArt.renderedCols == w && m.coverArt.renderedRows == rows {
+		return
+	}
+	m.coverArt.rendered = nil
+	m.coverArt.renderedCols, m.coverArt.renderedRows = w, rows
+	if m.coverArt.img == nil || w <= 0 || rows <= 0 {
+		return
+	}
+	if cols, fit := coverart.Fit(m.coverArt.img.Bounds(), w, rows); cols > 0 {
+		m.coverArt.rendered = strings.Split(coverart.Render(m.coverArt.img, cols, fit), "\n")
+	}
 }
 
 func (m Model) renderCoverColumn() string {
@@ -127,10 +148,7 @@ func (m Model) renderCoverColumn() string {
 	var art []string
 	switch {
 	case m.coverArt.img != nil:
-		cols, fit := coverart.Fit(m.coverArt.img.Bounds(), w, rows)
-		if cols > 0 {
-			art = strings.Split(coverart.Render(m.coverArt.img, cols, fit), "\n")
-		}
+		art = append([]string(nil), m.coverArt.rendered...)
 	case m.coverArt.loading:
 		art = []string{dimStyle.Render(truncate("Loading art...", w))}
 	case m.coverArt.err != nil:

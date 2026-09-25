@@ -123,6 +123,10 @@ type coverArtState struct {
 	loading bool
 	err     error
 	src     string
+
+	rendered     []string
+	renderedCols int
+	renderedRows int
 }
 
 // keymapOverlay holds state for the keybindings overlay.

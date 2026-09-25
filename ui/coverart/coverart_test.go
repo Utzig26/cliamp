@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -158,6 +159,7 @@ func TestLoadFileURL(t *testing.T) {
 }
 
 func TestLoadHTTP(t *testing.T) {
+	allowLoopback(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("User-Agent"); got == "" {
 			t.Error("request carried no User-Agent")
@@ -176,6 +178,7 @@ func TestLoadHTTP(t *testing.T) {
 }
 
 func TestLoadErrors(t *testing.T) {
+	allowLoopback(t)
 	notImage := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("not an image"))
 	}))
@@ -213,6 +216,7 @@ func TestLoadHonoursContext(t *testing.T) {
 }
 
 func TestLoadRejectsHugeDimensions(t *testing.T) {
+	allowLoopback(t)
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, solid(1, 1, color.RGBA{A: 0xff})); err != nil {
 		t.Fatal(err)
@@ -229,5 +233,44 @@ func TestLoadRejectsHugeDimensions(t *testing.T) {
 
 	if _, err := Load(t.Context(), srv.URL); err == nil || !strings.Contains(err.Error(), "too large") {
 		t.Fatalf("Load() error = %v, want an image too large error", err)
+	}
+}
+
+func allowLoopback(t *testing.T) {
+	t.Helper()
+	prev := blockedIP
+	blockedIP = func(ip net.IP) bool { return !ip.IsLoopback() && prev(ip) }
+	t.Cleanup(func() { blockedIP = prev })
+}
+
+func TestLoadRejectsPrivateDestinations(t *testing.T) {
+	for _, src := range []string{
+		"http://127.0.0.1/cover.jpg",
+		"http://localhost/cover.jpg",
+		"http://10.0.0.1/cover.jpg",
+		"http://192.168.1.1/cover.jpg",
+		"http://169.254.169.254/latest/meta-data",
+		"http://[::1]/cover.jpg",
+		"http://0.0.0.0/cover.jpg",
+		"ftp://example.com/cover.jpg",
+	} {
+		t.Run(src, func(t *testing.T) {
+			if _, err := Load(t.Context(), src); err == nil {
+				t.Error("Load() fetched a non-public destination")
+			}
+		})
+	}
+}
+
+func TestLoadRejectsRedirectToPrivate(t *testing.T) {
+	allowLoopback(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://10.0.0.1/cover.jpg", http.StatusFound)
+	}))
+	defer srv.Close()
+
+	_, err := Load(t.Context(), srv.URL)
+	if err == nil || !strings.Contains(err.Error(), "not a public address") {
+		t.Fatalf("Load() error = %v, want the redirect to be refused", err)
 	}
 }

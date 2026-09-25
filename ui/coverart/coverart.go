@@ -15,6 +15,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/bjarneo/cliamp/internal/httpclient"
 )
@@ -30,16 +32,31 @@ var blockedIP = func(ip net.IP) bool {
 		ip.IsLinkLocalMulticast() || ip.IsUnspecified()
 }
 
-var client = func() *http.Client {
-	c := *httpclient.Streaming
-	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+var client = &http.Client{
+	Transport: &http.Transport{
+		DialContext:         (&net.Dialer{Timeout: 10 * time.Second, Control: dialControl}).DialContext,
+		TLSHandshakeTimeout: 10 * time.Second,
+		ForceAttemptHTTP2:   true,
+	},
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 10 {
 			return errors.New("cover art: too many redirects")
 		}
 		return checkDestination(req.Context(), req.URL)
+	},
+}
+
+func dialControl(_, address string, _ syscall.RawConn) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return err
 	}
-	return &c
-}()
+	ip := net.ParseIP(host)
+	if ip == nil || blockedIP(ip) {
+		return fmt.Errorf("cover art: %s is not a public address", host)
+	}
+	return nil
+}
 
 func checkDestination(ctx context.Context, u *url.URL) error {
 	if u.Scheme != "http" && u.Scheme != "https" {

@@ -94,6 +94,7 @@ func TestCoverArtHiddenWhenItCannotFit(t *testing.T) {
 		{"visualizer off", func(m *Model) { m.vis.Mode = ui.VisNone }},
 		{"provider focus takes the frame", func(m *Model) { m.focus = focusProvider }},
 		{"simplified view", func(m *Model) { m.simplified = true }},
+		{"full-screen visualizer", func(m *Model) { m.fullVis = true }},
 		{"visualizer too short to share", func(m *Model) { m.visRows = 1 }},
 		{"another provider is active", func(m *Model) {
 			other := commandsTestProvider{name: "Navidrome"}
@@ -368,5 +369,14 @@ func TestToggleCoverArt(t *testing.T) {
 	}
 	if m.coverArt.enabled {
 		t.Error("artwork should be disabled after the second toggle")
+	}
+}
+
+func TestFullScreenVisualizerKeepsTheStatus(t *testing.T) {
+	m := coverModel(t, 120, 40, config.CoverArtMedium)
+	m.fullVis = true
+	m.recomputeLayout()
+	if !strings.Contains(m.renderTimeStatus(), "Stopped") {
+		t.Error("the full-screen visualizer should keep the status on the time row")
 	}
 }

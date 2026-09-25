@@ -43,7 +43,7 @@ func (m Model) coverArtGeometry(l frameLayout) (cols, rows int) {
 	if !m.coverArt.enabled || l.tier != layoutFull || !m.providerIsSpotify() {
 		return 0, 0
 	}
-	if m.usesContentFirstLayout() || m.usesSimplifiedLayout() || m.visualizerDisabled() {
+	if m.fullVis || m.usesContentFirstLayout() || m.usesSimplifiedLayout() || m.visualizerDisabled() {
 		return 0, 0
 	}
 	rows = min(coverSizeRows(m.coverArt.size), 4+l.visualizerRows-1)

@@ -1,6 +1,7 @@
 package coverart
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"image"
@@ -17,7 +18,25 @@ import (
 
 const maxBytes = 12 << 20
 
+const maxPixels = 4096 * 4096
+
 const upperHalf = '▀'
+
+func decodeBounded(r io.Reader) (image.Image, error) {
+	data, err := io.ReadAll(io.LimitReader(r, maxBytes))
+	if err != nil {
+		return nil, err
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 || uint64(cfg.Width)*uint64(cfg.Height) > maxPixels {
+		return nil, fmt.Errorf("image too large: %dx%d", cfg.Width, cfg.Height)
+	}
+	img, _, err := image.Decode(bytes.NewReader(data))
+	return img, err
+}
 
 func Load(ctx context.Context, src string) (image.Image, error) {
 	if src == "" {
@@ -29,7 +48,7 @@ func Load(ctx context.Context, src string) (image.Image, error) {
 			return nil, fmt.Errorf("cover art: open %s: %w", path, err)
 		}
 		defer f.Close()
-		img, _, err := image.Decode(io.LimitReader(f, maxBytes))
+		img, err := decodeBounded(f)
 		if err != nil {
 			return nil, fmt.Errorf("cover art: decode %s: %w", path, err)
 		}
@@ -49,7 +68,7 @@ func Load(ctx context.Context, src string) (image.Image, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("cover art: fetch: http status %s", resp.Status)
 	}
-	img, _, err := image.Decode(io.LimitReader(resp.Body, maxBytes))
+	img, err := decodeBounded(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("cover art: decode: %w", err)
 	}

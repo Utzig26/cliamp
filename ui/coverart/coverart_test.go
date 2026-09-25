@@ -1,7 +1,10 @@
 package coverart
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/png"
@@ -206,5 +209,25 @@ func TestLoadHonoursContext(t *testing.T) {
 	cancel()
 	if _, err := Load(ctx, "http://example.invalid/cover.jpg"); err == nil {
 		t.Error("Load() with a cancelled context succeeded, want an error")
+	}
+}
+
+func TestLoadRejectsHugeDimensions(t *testing.T) {
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, solid(1, 1, color.RGBA{A: 0xff})); err != nil {
+		t.Fatal(err)
+	}
+	data := buf.Bytes()
+	binary.BigEndian.PutUint32(data[16:20], 100000)
+	binary.BigEndian.PutUint32(data[20:24], 100000)
+	binary.BigEndian.PutUint32(data[29:33], crc32.ChecksumIEEE(data[12:29]))
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(data)
+	}))
+	defer srv.Close()
+
+	if _, err := Load(t.Context(), srv.URL); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("Load() error = %v, want an image too large error", err)
 	}
 }

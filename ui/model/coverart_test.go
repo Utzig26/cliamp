@@ -333,7 +333,8 @@ func TestRefreshCoverArtFor(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			st := tt.before
 			st.enabled = tt.enabled
-			m := Model{coverArt: st}
+			prov := commandsTestProvider{name: "Spotify"}
+			m := Model{coverArt: st, provider: prov, providers: []ProviderEntry{{Key: "spotify", Name: "Spotify", Provider: prov}}}
 
 			cmd := m.refreshCoverArtFor(tt.track)
 
@@ -355,6 +356,9 @@ func TestRefreshCoverArtFor(t *testing.T) {
 
 func TestToggleCoverArt(t *testing.T) {
 	m := newLayoutTestModel(120, 40)
+	prov := commandsTestProvider{name: "Spotify"}
+	m.provider = prov
+	m.providers = []ProviderEntry{{Key: "spotify", Name: "Spotify", Provider: prov}}
 	m.playlist.Replace([]playlist.Track{{Title: "Song", AlbumArtURL: "https://art/one.jpg"}})
 	m.playlist.SetIndex(0)
 

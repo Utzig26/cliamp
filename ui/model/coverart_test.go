@@ -380,3 +380,30 @@ func TestFullScreenVisualizerKeepsTheStatus(t *testing.T) {
 		t.Error("the full-screen visualizer should keep the status on the time row")
 	}
 }
+
+func TestCoverArtRenderIsCached(t *testing.T) {
+	m := coverModel(t, 120, 40, config.CoverArtMedium)
+	if len(m.coverArt.rendered) == 0 {
+		t.Fatal("loading the image should render it once")
+	}
+
+	sentinel := strings.Repeat("x", m.layout.coverCols)
+	m.coverArt.rendered = []string{sentinel}
+	m.recomputeLayout()
+	if !strings.Contains(m.renderCoverColumn(), sentinel) {
+		t.Error("an unchanged layout should reuse the cached render")
+	}
+
+	before := m.coverArt.renderedRows
+	m.coverArt.size = config.CoverArtSmall
+	m.recomputeLayout()
+	if m.coverArt.renderedRows == before || len(m.coverArt.rendered) != m.layout.coverRows {
+		t.Errorf("a new cover size should re-render: %d cached rows for a %d row box",
+			len(m.coverArt.rendered), m.layout.coverRows)
+	}
+
+	m.setCoverImage(nil)
+	if m.coverArt.rendered != nil {
+		t.Error("dropping the image should drop the cached render")
+	}
+}

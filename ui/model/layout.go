@@ -220,6 +220,7 @@ func (m *Model) recomputeLayout() {
 	}
 
 	m.layout = layout
+	m.rerenderCoverArt()
 	ui.FrameStyle = ui.FrameStyle.Padding(paddingV, paddingH).Width(width)
 	ui.PanelWidth = layout.panelWidth
 	if m.vis != nil {

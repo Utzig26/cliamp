@@ -3,13 +3,16 @@ package coverart
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
@@ -21,6 +24,42 @@ const maxBytes = 12 << 20
 const maxPixels = 4096 * 4096
 
 const upperHalf = '▀'
+
+var blockedIP = func(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsUnspecified()
+}
+
+var client = func() *http.Client {
+	c := *httpclient.Streaming
+	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return errors.New("cover art: too many redirects")
+		}
+		return checkDestination(req.Context(), req.URL)
+	}
+	return &c
+}()
+
+func checkDestination(ctx context.Context, u *url.URL) error {
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("cover art: unsupported scheme %q", u.Scheme)
+	}
+	host := u.Hostname()
+	ips := []net.IP{net.ParseIP(host)}
+	if ips[0] == nil {
+		var err error
+		if ips, err = net.DefaultResolver.LookupIP(ctx, "ip", host); err != nil {
+			return fmt.Errorf("cover art: resolve %s: %w", host, err)
+		}
+	}
+	for _, ip := range ips {
+		if blockedIP(ip) {
+			return fmt.Errorf("cover art: %s is not a public address", host)
+		}
+	}
+	return nil
+}
 
 func decodeBounded(r io.Reader) (image.Image, error) {
 	data, err := io.ReadAll(io.LimitReader(r, maxBytes))
@@ -59,8 +98,11 @@ func Load(ctx context.Context, src string) (image.Image, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cover art: request: %w", err)
 	}
+	if err := checkDestination(ctx, req.URL); err != nil {
+		return nil, err
+	}
 	req.Header.Set("User-Agent", httpclient.UserAgent)
-	resp, err := httpclient.Streaming.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("cover art: fetch: %w", err)
 	}
